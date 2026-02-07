@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react';
-
-// Helper for random avatar color
+import { useState, useEffect, useMemo, useCallback } from 'react';
 function avatarColor(name) {
   const colors = [
     'bg-gradient-to-br from-pink-400 via-fuchsia-500 to-indigo-500',
@@ -15,8 +13,6 @@ function avatarColor(name) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
 }
-
-// Confetti Component
 function Confetti() {
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
@@ -42,53 +38,64 @@ function Confetti() {
     </div>
   );
 }
-
-// Toast Notification Component
 function Toast({ message, type = 'success', onClose }) {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
     return () => clearTimeout(timer);
   }, [onClose]);
-
   const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
-
   return (
-    <div className={`fixed top-4 right-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-slideIn`}>
-      <div className="flex items-center gap-2">
-        <span>{message}</span>
-        <button onClick={onClose} className="text-white hover:text-gray-200 font-bold">×</button>
+    <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-4 ${bgColor} text-white px-4 sm:px-6 py-3 rounded-lg shadow-lg z-50 animate-slideIn`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm sm:text-base">{message}</span>
+        <button
+          onClick={onClose}
+          aria-label="Close notification"
+          className="h-8 w-8 rounded-full text-white/90 hover:text-white hover:bg-white/10 font-bold text-lg leading-none transition-colors"
+        >
+          ×
+        </button>
       </div>
     </div>
   );
 }
-
-// Confirmation Dialog
-function ConfirmDialog({ message, onConfirm, onCancel }) {
+function ConfirmDialog({
+  title = 'Confirm action',
+  message,
+  confirmLabel = 'Confirm',
+  confirmTone = 'danger',
+  onConfirm,
+  onCancel,
+}) {
+  const confirmClass =
+    confirmTone === 'warning'
+      ? 'bg-orange-500 hover:bg-orange-600'
+      : confirmTone === 'primary'
+      ? 'bg-purple-500 hover:bg-purple-600'
+      : 'bg-red-500 hover:bg-red-600';
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
-        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Confirm Action</h3>
+        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">{title}</h3>
         <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
+            className="w-full sm:flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors"
+            className={`w-full sm:flex-1 px-4 py-2 ${confirmClass} text-white rounded-lg font-semibold transition-colors`}
           >
-            Confirm
+            {confirmLabel}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
-// Achievement Badge Component
 function AchievementBadge({ icon, title, description }) {
   return (
     <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg p-3 text-white shadow-lg animate-scaleIn">
@@ -98,9 +105,7 @@ function AchievementBadge({ icon, title, description }) {
     </div>
   );
 }
-
 function App() {
-  // State Management
   const [boards, setBoards] = useState([]);
   const [currentBoardId, setCurrentBoardId] = useState(null);
   const [name, setName] = useState("");
@@ -122,16 +127,12 @@ function App() {
   const [newBoardName, setNewBoardName] = useState("");
   const [pointLabel, setPointLabel] = useState("points");
   const [showSettings, setShowSettings] = useState(false);
-
-  // Initialize with default board
   useEffect(() => {
     const savedBoards = localStorage.getItem('scoreboard-boards');
     const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
     const savedPointLabel = localStorage.getItem('scoreboard-pointlabel');
-    
     if (savedDarkMode) setDarkMode(JSON.parse(savedDarkMode));
     if (savedPointLabel) setPointLabel(savedPointLabel);
-    
     if (savedBoards) {
       const parsed = JSON.parse(savedBoards);
       setBoards(parsed);
@@ -149,14 +150,11 @@ function App() {
       setCurrentBoardId(defaultBoard.id);
     }
   }, []);
-
-  // Save boards to localStorage
   useEffect(() => {
     if (boards.length > 0) {
       localStorage.setItem('scoreboard-boards', JSON.stringify(boards));
     }
   }, [boards]);
-
   useEffect(() => {
     localStorage.setItem('scoreboard-darkmode', JSON.stringify(darkMode));
     if (darkMode) {
@@ -165,28 +163,22 @@ function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
-
   useEffect(() => {
     localStorage.setItem('scoreboard-pointlabel', pointLabel);
   }, [pointLabel]);
-
   const currentBoard = boards.find(b => b.id === currentBoardId);
   const people = currentBoard?.people || [];
-
   const setPeople = (newPeople) => {
     setBoards(boards.map(b => 
       b.id === currentBoardId ? { ...b, people: newPeople } : b
     ));
   };
-
-  // Undo/Redo functionality
   const saveToHistory = (newPeople) => {
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(newPeople);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   };
-
   const undo = () => {
     if (historyIndex > 0) {
       setHistoryIndex(historyIndex - 1);
@@ -194,7 +186,6 @@ function App() {
       showToast('Undone', 'info');
     }
   };
-
   const redo = () => {
     if (historyIndex < history.length - 1) {
       setHistoryIndex(historyIndex + 1);
@@ -202,42 +193,34 @@ function App() {
       showToast('Redone', 'info');
     }
   };
-
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
   };
-
   const triggerConfetti = () => {
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 5000);
   };
-
   const checkAchievements = (person, oldPoints) => {
-    // First 100 points
     if (person.points >= 100 && oldPoints < 100) {
       setShowAchievement({ icon: '🎯', title: 'Century Club', description: 'Reached 100 points!' });
       setTimeout(() => setShowAchievement(null), 4000);
       triggerConfetti();
     }
   };
-
   const handleAddOrUpdate = (e) => {
     e.preventDefault();
     if (!name.trim() || isNaN(points) || points === "") {
       showToast('Please fill in all fields correctly', 'error');
       return;
     }
-
     const numPoints = Number(points);
     const isDuplicate = people.some((p, i) => 
       p.name.toLowerCase() === name.trim().toLowerCase() && i !== editIndex
     );
-
     if (isDuplicate) {
       showToast('A person with this name already exists', 'error');
       return;
     }
-
     if (editIndex !== null) {
       const updated = people.map((p, i) =>
         i === editIndex ? { 
@@ -261,23 +244,19 @@ function App() {
       saveToHistory(updated);
       showToast('Person added successfully!');
     }
-
     setName("");
     setPoints("");
     setShowForm(false);
   };
-
   const handleEdit = (idx) => {
     setName(people[idx].name);
     setPoints(people[idx].points);
     setEditIndex(idx);
     setShowForm(true);
   };
-
   const handleDelete = (idx) => {
     setConfirmDelete(idx);
   };
-
   const confirmDeleteAction = () => {
     const idx = confirmDelete;
     const updated = people.filter((_, i) => i !== idx);
@@ -292,13 +271,12 @@ function App() {
     showToast('Person deleted successfully!');
     setConfirmDelete(null);
   };
-
   const adjustPoints = (idx, delta) => {
     const oldPoints = people[idx].points;
     const updated = people.map((p, i) =>
       i === idx ? { 
         ...p, 
-        points: Math.max(0, p.points + delta),
+        points: p.points + delta,
       } : p
     );
     setPeople(updated);
@@ -306,17 +284,14 @@ function App() {
     checkAchievements(updated[idx], oldPoints);
     showToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
   };
-
   const resetAllPoints = () => {
     if (people.length === 0) return;
     setConfirmReset(true);
   };
-
   const clearAll = () => {
     if (people.length === 0) return;
     setConfirmClear(true);
   };
-
   const confirmResetAction = () => {
     const updated = people.map(p => ({ 
       ...p, 
@@ -327,7 +302,6 @@ function App() {
     showToast('All points reset!', 'info');
     setConfirmReset(false);
   };
-
   const confirmClearAction = () => {
     setPeople([]);
     saveToHistory([]);
@@ -338,7 +312,6 @@ function App() {
     showToast('All data cleared!', 'info');
     setConfirmClear(false);
   };
-
   const createBoard = () => {
     if (!newBoardName.trim()) {
       showToast('Please enter a board name', 'error');
@@ -356,7 +329,6 @@ function App() {
     setShowBoardManager(false);
     showToast('Board created!', 'success');
   };
-
   const deleteBoard = (boardId) => {
     if (boards.length === 1) {
       showToast('Cannot delete the last board', 'error');
@@ -371,24 +343,18 @@ function App() {
       showToast('Board deleted', 'info');
     }
   };
-
-  // Filtering
   const filteredPeople = people.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Sorting
-  const sortedPeople = [...filteredPeople].sort((a, b) => {
+  const sortedPeople = useMemo(() => {
+  return [...filteredPeople].sort((a, b) => {
     switch (sortBy) {
       case 'points-desc': return b.points - a.points;
       case 'points-asc': return a.points - b.points;
       case 'name-asc': return a.name.localeCompare(b.name);
       case 'name-desc': return b.name.localeCompare(a.name);
-      default: return 0;
-    }
-  });
-
-
+      default: return 0; } });
+}, [filteredPeople, sortBy]);
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100'} p-4 md:p-8`}>
       <style>{`
@@ -414,47 +380,46 @@ function App() {
         .animate-confetti { animation: confetti linear infinite; }
         .person-card { animation: fadeIn 0.3s ease-out; }
       `}</style>
-
-      {/* Confetti */}
       {showConfetti && <Confetti />}
-
-      {/* Toast */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-      {/* Achievement Popup */}
       {showAchievement && (
         <div className="fixed top-20 right-4 z-50 animate-slideIn">
           <AchievementBadge {...showAchievement} />
         </div>
       )}
-
-      {/* Confirmation Dialog */}
       {confirmDelete !== null && (
         <ConfirmDialog
-          message={`Delete ${people[confirmDelete]?.name}?`}
+          title="Delete person?"
+          message={`Delete ${people[confirmDelete]?.name}? This cannot be undone.`}
+          confirmLabel="Delete"
+          confirmTone="danger"
           onConfirm={confirmDeleteAction}
           onCancel={() => setConfirmDelete(null)}
         />
       )}
       {confirmReset && (
         <ConfirmDialog
-          message="Reset all points to zero? This cannot be undone."
+          title="Reset points?"
+          message="Set everyone's points to zero. This cannot be undone."
+          confirmLabel="Reset"
+          confirmTone="warning"
           onConfirm={confirmResetAction}
           onCancel={() => setConfirmReset(false)}
         />
       )}
       {confirmClear && (
         <ConfirmDialog
-          message="Delete all people? This cannot be undone."
+          title="Clear all people?"
+          message="Remove everyone from this board. This cannot be undone."
+          confirmLabel="Clear"
+          confirmTone="danger"
           onConfirm={confirmClearAction}
           onCancel={() => setConfirmClear(false)}
         />
       )}
-
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3">
               <div className="text-4xl">🏅</div>
               <div>
@@ -471,46 +436,39 @@ function App() {
                 )}
               </div>
             </div>
-            
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-start sm:justify-end">
               <button
                 onClick={() => setDarkMode(!darkMode)}
-                className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                 title="Toggle Dark Mode"
               >
                 {darkMode ? '☀️' : '🌙'}
               </button>
-              
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                 title="Settings"
               >
                 ⚙️
               </button>
-
               <button
                 onClick={undo}
                 disabled={historyIndex <= 0}
-                className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Undo"
               >
                 ↶
               </button>
-
               <button
                 onClick={redo}
                 disabled={historyIndex >= history.length - 1}
-                className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Redo"
               >
                 ↷
               </button>
             </div>
           </div>
-
-          {/* Settings Panel */}
           {showSettings && (
             <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg animate-fadeIn">
               <h3 className="font-bold text-gray-800 dark:text-white mb-3">Settings</h3>
@@ -530,8 +488,6 @@ function App() {
               </div>
             </div>
           )}
-
-          {/* Board Manager */}
           {showBoardManager && (
             <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg animate-fadeIn">
               <h3 className="font-bold text-gray-800 dark:text-white mb-3">Manage Boards</h3>
@@ -576,47 +532,40 @@ function App() {
               </div>
             </div>
           )}
-
-          {/* Search & Controls */}
           {people.length > 0 && (
-            <div className="mt-4 flex gap-3 flex-wrap">
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="🔍 Search people..."
-                className="flex-1 min-w-[200px] px-4 py-2 bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
+                className="w-full sm:flex-1 min-w-0 px-4 py-2 bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
               />
-              
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-4 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg font-semibold text-gray-700 dark:text-gray-200 border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 focus:outline-none transition-colors"
+                className="w-full sm:w-auto h-11 px-4 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg font-semibold text-gray-700 dark:text-gray-200 border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 focus:outline-none transition-colors"
               >
                 <option value="points-desc">🔽 Highest Points</option>
                 <option value="points-asc">🔼 Lowest Points</option>
                 <option value="name-asc">🔤 Name A-Z</option>
                 <option value="name-desc">🔤 Name Z-A</option>
               </select>
-
               <button
                 onClick={resetAllPoints}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors"
+                className="w-full sm:w-auto h-11 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors active:scale-95"
               >
                 Reset Points
               </button>
-
               <button
                 onClick={clearAll}
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors"
+                className="w-full sm:w-auto h-11 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors active:scale-95"
               >
                 Clear All
               </button>
             </div>
           )}
         </div>
-
-        {/* People List */}
         <div className="space-y-3">
           {sortedPeople.length === 0 && people.length === 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-12 text-center">
@@ -626,7 +575,6 @@ function App() {
               </p>
             </div>
           )}
-
           {sortedPeople.length === 0 && people.length > 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-12 text-center">
               <div className="text-6xl mb-4">🔍</div>
@@ -635,19 +583,16 @@ function App() {
               </p>
             </div>
           )}
-
           {sortedPeople.map((p) => {
             const actualIndex = people.findIndex(person => person.name === p.name);
             const position = [...people].sort((a, b) => b.points - a.points).findIndex(person => person.name === p.name) + 1;
-            
             return (
               <div
                 key={actualIndex}
                 className="person-card bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 hover:shadow-xl transition-all"
               >
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  {/* Position Badge & Avatar */}
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-center gap-4 flex-1 min-w-0 w-full">
                     <div className="text-2xl font-bold text-gray-400 dark:text-gray-500 w-8 flex-shrink-0">
                       {position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `#${position}`}
                     </div>
@@ -656,7 +601,7 @@ function App() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-lg font-bold text-gray-800 dark:text-white truncate">{p.name}</div>
-                      <div className="text-2xl font-extrabold text-purple-600 dark:text-purple-400">{p.points} {pointLabel}</div>
+                      <div className={`text-2xl font-extrabold ${p.points < 0 ? 'text-red-500 dark:text-red-400' : 'text-purple-600 dark:text-purple-400'}`}> {p.points} {pointLabel}</div>
                       {p.created && (
                         <div className="text-xs text-gray-400 dark:text-gray-500">
                           Joined {new Date(p.created).toLocaleDateString()}
@@ -664,63 +609,56 @@ function App() {
                       )}
                     </div>
                   </div>
-
-                  {/* Quick Actions */}
-                  <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                     <button
                       onClick={() => adjustPoints(actualIndex, -10)}
-                      className="w-9 h-9 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-600 dark:text-red-400 font-bold rounded-lg transition-colors text-sm"
+                      className="h-11 min-w-[52px] px-2 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
                       title="Subtract 10"
                     >
                       -10
                     </button>
                     <button
                       onClick={() => adjustPoints(actualIndex, -1)}
-                      className="w-9 h-9 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-600 dark:text-red-400 font-bold rounded-lg transition-colors"
+                      className="h-11 w-11 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-base active:scale-95"
                       title="Subtract 1"
                     >
                       −
                     </button>
                     <button
                       onClick={() => adjustPoints(actualIndex, 1)}
-                      className="w-9 h-9 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-600 dark:text-green-400 font-bold rounded-lg transition-colors"
+                      className="h-11 w-11 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-base active:scale-95"
                       title="Add 1"
                     >
                       +
                     </button>
                     <button
                       onClick={() => adjustPoints(actualIndex, 10)}
-                      className="w-9 h-9 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-600 dark:text-green-400 font-bold rounded-lg transition-colors text-sm"
+                      className="h-11 min-w-[52px] px-2 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
                       title="Add 10"
                     >
                       +10
                     </button>
-                    
-                    <div className="w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
-                    
+                    <div className="hidden sm:block w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
                     <button
                       onClick={() => handleEdit(actualIndex)}
-                      className="w-10 h-10 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-full shadow transition-all"
+                      className="h-11 w-11 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-lg shadow transition-all active:scale-95"
                       title="Edit"
                     >
                       ✏️
                     </button>
                     <button
                       onClick={() => handleDelete(actualIndex)}
-                      className="w-10 h-10 bg-red-500 hover:bg-red-600 text-white font-bold rounded-full shadow transition-all"
+                      className="h-11 w-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg shadow transition-all active:scale-95"
                       title="Delete"
                     >
                       🗑️
                     </button>
                   </div>
                 </div>
-
               </div>
             );
           })}
         </div>
-
-        {/* Add Person Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 relative animate-scaleIn">
@@ -735,11 +673,9 @@ function App() {
               >
                 ×
               </button>
-
               <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">
                 {editIndex !== null ? 'Edit Person' : 'Add Person'}
               </h2>
-
               <form onSubmit={handleAddOrUpdate} className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Name</label>
@@ -753,7 +689,6 @@ function App() {
                     autoFocus
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Points</label>
                   <input
@@ -762,11 +697,9 @@ function App() {
                     placeholder="Enter points"
                     value={points}
                     onChange={(e) => setPoints(e.target.value)}
-                    min={0}
                     max={9999}
                   />
                 </div>
-
                 <button
                   type="submit"
                   className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all transform hover:scale-105"
@@ -783,9 +716,8 @@ function App() {
             setEditIndex(null);
             setName("");
             setPoints("");  
-
           }}
-          className="fixed bottom-8 right-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all transform hover:scale-110 focus:outline-none focus:ring-4 focus:ring-purple-300 z-30"
+          className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-2xl flex items-center justify-center transition-all transform hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 z-30"
           title="Add Person"
         >
           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -796,7 +728,4 @@ function App() {
     </div>
   );
 }
-
-
- 
 export default App;
