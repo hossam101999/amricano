@@ -96,6 +96,43 @@ function ConfirmDialog({
     </div>
   );
 }
+function InstallHelpDialog({ isIos, isAndroid, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
+        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Install this app</h3>
+        <p className="text-gray-600 dark:text-gray-300 mb-4">
+          Some browsers do not support app installation. If you do not see an install option, you can still use the app in the browser.
+        </p>
+        {isIos ? (
+          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
+            <li>Tap the Share button in Safari.</li>
+            <li>Tap "Add to Home Screen".</li>
+            <li>Tap "Add".</li>
+          </ol>
+        ) : isAndroid ? (
+          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
+            <li>Open the browser menu.</li>
+            <li>Tap "Install app" or "Add to Home screen".</li>
+            <li>Confirm the install.</li>
+          </ol>
+        ) : (
+          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
+            <li>Open the browser menu.</li>
+            <li>Select "Install app" if available.</li>
+            <li>Confirm the install.</li>
+          </ol>
+        )}
+        <button
+          onClick={onClose}
+          className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
 function AchievementBadge({ icon, title, description }) {
   return (
     <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg p-3 text-white shadow-lg animate-scaleIn">
@@ -118,6 +155,9 @@ function App() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -164,10 +204,39 @@ function App() {
     }
   }, [darkMode]);
   useEffect(() => {
+    const handleBeforeInstall = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleInstalled = () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+      setToast({ message: 'App installed!', type: 'success' });
+    };
+    const checkInstalled = () => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      setIsInstalled(standalone);
+    };
+    checkInstalled();
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+  useEffect(() => {
     localStorage.setItem('scoreboard-pointlabel', pointLabel);
   }, [pointLabel]);
   const currentBoard = boards.find(b => b.id === currentBoardId);
   const people = currentBoard?.people || [];
+  const canInstall = installPrompt && !isInstalled;
+  const platform = useMemo(() => {
+    const ua = navigator.userAgent || '';
+    const isIos = /iphone|ipad|ipod/i.test(ua);
+    const isAndroid = /android/i.test(ua);
+    return { isIos, isAndroid };
+  }, []);
   const setPeople = (newPeople) => {
     setBoards(boards.map(b => 
       b.id === currentBoardId ? { ...b, people: newPeople } : b
@@ -195,6 +264,17 @@ function App() {
   };
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
+  };
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const choiceResult = await installPrompt.userChoice;
+    setInstallPrompt(null);
+    if (choiceResult?.outcome === 'accepted') {
+      showToast('Installing...', 'info');
+    } else {
+      showToast('Installation canceled', 'info');
+    }
   };
   const triggerConfetti = () => {
     setShowConfetti(true);
@@ -417,6 +497,13 @@ function App() {
           onCancel={() => setConfirmClear(false)}
         />
       )}
+      {showInstallHelp && (
+        <InstallHelpDialog
+          isIos={platform.isIos}
+          isAndroid={platform.isAndroid}
+          onClose={() => setShowInstallHelp(false)}
+        />
+      )}
       <div className="max-w-6xl mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
@@ -444,6 +531,24 @@ function App() {
               >
                 {darkMode ? '☀️' : '🌙'}
               </button>
+              {!isInstalled && (
+                <button
+                  onClick={() => {
+                    if (canInstall) {
+                      handleInstall();
+                    } else {
+                      setShowInstallHelp(true);
+                    }
+                  }}
+                  className={`h-11 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 ${canInstall ? '' : 'opacity-60'}`}
+                  title={canInstall ? 'Install App' : 'Install not available'}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14" />
+                  </svg>
+                  <span className="hidden sm:inline">Install</span>
+                </button>
+              )}
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
