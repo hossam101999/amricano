@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useReducer } from 'react';
 function avatarColor(name) {
   const colors = [
     'bg-gradient-to-br from-pink-400 via-fuchsia-500 to-indigo-500',
@@ -142,6 +142,28 @@ function AchievementBadge({ icon, title, description }) {
     </div>
   );
 }
+const initialHistoryState = { entries: [], index: -1 };
+function historyReducer(state, action) {
+  switch (action.type) {
+    case 'reset': {
+      const people = Array.isArray(action.people) ? action.people : [];
+      return { entries: [people], index: 0 };
+    }
+    case 'record': {
+      const prevPeople = Array.isArray(action.prev)
+        ? action.prev
+        : state.entries[state.index] || [];
+      const nextPeople = Array.isArray(action.next) ? action.next : [];
+      const base = state.entries.length ? state.entries.slice(0, state.index + 1) : [prevPeople];
+      const entries = [...base, nextPeople];
+      return { entries, index: entries.length - 1 };
+    }
+    case 'set-index':
+      return { ...state, index: action.index };
+    default:
+      return state;
+  }
+}
 function App() {
   const [boards, setBoards] = useState([]);
   const [currentBoardId, setCurrentBoardId] = useState(null);
@@ -154,12 +176,15 @@ function App() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmDeleteBoardId, setConfirmDeleteBoardId] = useState(null);
   const [darkMode, setDarkMode] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [showInstallHelp, setShowInstallHelp] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [{ entries: history, index: historyIndex }, dispatchHistory] = useReducer(
+    historyReducer,
+    initialHistoryState
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAchievement, setShowAchievement] = useState(null);
@@ -237,28 +262,34 @@ function App() {
     const isAndroid = /android/i.test(ua);
     return { isIos, isAndroid };
   }, []);
+  const boardToDelete = confirmDeleteBoardId !== null
+    ? boards.find((board) => board.id === confirmDeleteBoardId)
+    : null;
+  useEffect(() => {
+    if (!currentBoard) return;
+    dispatchHistory({ type: 'reset', people: currentBoard.people || [] });
+  }, [currentBoardId]);
   const setPeople = (newPeople) => {
-    setBoards(boards.map(b => 
-      b.id === currentBoardId ? { ...b, people: newPeople } : b
-    ));
+    setBoards((prevBoards) =>
+      prevBoards.map((b) => (b.id === currentBoardId ? { ...b, people: newPeople } : b))
+    );
   };
-  const saveToHistory = (newPeople) => {
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(newPeople);
-    setHistory(newHistory);
-    setHistoryIndex(newHistory.length - 1);
+  const saveToHistory = (prevPeople, newPeople) => {
+    dispatchHistory({ type: 'record', prev: prevPeople, next: newPeople });
   };
   const undo = () => {
     if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1);
-      setPeople(history[historyIndex - 1]);
+      const nextIndex = historyIndex - 1;
+      setPeople(history[nextIndex]);
+      dispatchHistory({ type: 'set-index', index: nextIndex });
       showToast('Undone', 'info');
     }
   };
   const redo = () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1);
-      setPeople(history[historyIndex + 1]);
+      const nextIndex = historyIndex + 1;
+      setPeople(history[nextIndex]);
+      dispatchHistory({ type: 'set-index', index: nextIndex });
       showToast('Redone', 'info');
     }
   };
@@ -310,7 +341,7 @@ function App() {
         } : p
       );
       setPeople(updated);
-      saveToHistory(updated);
+      saveToHistory(people, updated);
       setEditIndex(null);
       showToast('Person updated successfully!');
     } else {
@@ -321,7 +352,7 @@ function App() {
       };
       const updated = [...people, newPerson];
       setPeople(updated);
-      saveToHistory(updated);
+      saveToHistory(people, updated);
       showToast('Person added successfully!');
     }
     setName("");
@@ -341,7 +372,7 @@ function App() {
     const idx = confirmDelete;
     const updated = people.filter((_, i) => i !== idx);
     setPeople(updated);
-    saveToHistory(updated);
+    saveToHistory(people, updated);
     if (editIndex === idx) {
       setEditIndex(null);
       setName("");
@@ -360,7 +391,7 @@ function App() {
       } : p
     );
     setPeople(updated);
-    saveToHistory(updated);
+    saveToHistory(people, updated);
     checkAchievements(updated[idx], oldPoints);
     showToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
   };
@@ -378,13 +409,13 @@ function App() {
       points: 0,
     }));
     setPeople(updated);
-    saveToHistory(updated);
+    saveToHistory(people, updated);
     showToast('All points reset!', 'info');
     setConfirmReset(false);
   };
   const confirmClearAction = () => {
     setPeople([]);
-    saveToHistory([]);
+    saveToHistory(people, []);
     setEditIndex(null);
     setName("");
     setPoints("");
@@ -403,7 +434,7 @@ function App() {
       people: [],
       created: new Date().toISOString(),
     };
-    setBoards([...boards, newBoard]);
+    setBoards((prevBoards) => [...prevBoards, newBoard]);
     setCurrentBoardId(newBoard.id);
     setNewBoardName("");
     setShowBoardManager(false);
@@ -414,14 +445,27 @@ function App() {
       showToast('Cannot delete the last board', 'error');
       return;
     }
-    if (window.confirm('Delete this board?')) {
-      const remaining = boards.filter(b => b.id !== boardId);
-      setBoards(remaining);
-      if (currentBoardId === boardId) {
-        setCurrentBoardId(remaining[0].id);
-      }
-      showToast('Board deleted', 'info');
+    setConfirmDeleteBoardId(boardId);
+  };
+  const confirmDeleteBoardAction = () => {
+    if (confirmDeleteBoardId === null) return;
+    if (boards.length === 1) {
+      showToast('Cannot delete the last board', 'error');
+      setConfirmDeleteBoardId(null);
+      return;
     }
+    const remaining = boards.filter(b => b.id !== confirmDeleteBoardId);
+    if (remaining.length === 0) {
+      showToast('Cannot delete the last board', 'error');
+      setConfirmDeleteBoardId(null);
+      return;
+    }
+    setBoards(remaining);
+    if (currentBoardId === confirmDeleteBoardId) {
+      setCurrentBoardId(remaining[0].id);
+    }
+    setConfirmDeleteBoardId(null);
+    showToast('Board deleted', 'info');
   };
   const filteredPeople = people.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -495,6 +539,16 @@ function App() {
           confirmTone="danger"
           onConfirm={confirmClearAction}
           onCancel={() => setConfirmClear(false)}
+        />
+      )}
+      {confirmDeleteBoardId !== null && (
+        <ConfirmDialog
+          title="Delete board?"
+          message={`Delete ${boardToDelete?.name || 'this board'}? This cannot be undone.`}
+          confirmLabel="Delete"
+          confirmTone="danger"
+          onConfirm={confirmDeleteBoardAction}
+          onCancel={() => setConfirmDeleteBoardId(null)}
         />
       )}
       {showInstallHelp && (

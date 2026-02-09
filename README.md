@@ -1,16 +1,21 @@
-# React + Vite
+# Scoreboard PWA
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## What this program is for
+Scoreboard is a simple, offline-first app for tracking people and points. It lets you add players, update scores, sort/search, and keep multiple boards. It also supports installing the app on supported browsers.
 
-Currently, two official plugins are available:
+## What we use in this program
+- React + Vite for the UI and build
+- Tailwind CSS for styling
+- Service Worker + Web Manifest for PWA/offline support
+- React Testing Library + Vitest for tests
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## What you need to know
+- The "Install" button appears when the browser supports PWA install. On browsers without install support, the app shows manual instructions or runs in the browser.
+- The service worker only registers in production builds, so install/offline behavior is best tested via `npm run build` + `npm run preview`.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Scripts
+- `npm run dev` - start the dev server
+- `npm run build` - build for production
+- `npm run preview` - preview the production build
+- `npm run lint` - run ESLint
+- `npm test` - run tests
