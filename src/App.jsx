@@ -192,6 +192,8 @@ function App() {
   const [newBoardName, setNewBoardName] = useState("");
   const [pointLabel, setPointLabel] = useState("points");
   const [showSettings, setShowSettings] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+const [deviceType, setDeviceType] = useState('');
   useEffect(() => {
     const savedBoards = localStorage.getItem('scoreboard-boards');
     const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
@@ -250,6 +252,15 @@ function App() {
       window.removeEventListener('appinstalled', handleInstalled);
     };
   }, []);
+  useEffect(() => {
+  const ua = navigator.userAgent || '';
+  const isIos = /iphone|ipad|ipod/i.test(ua);
+  const isAndroid = /android/i.test(ua);
+  
+  if (isIos) setDeviceType('ios');
+  else if (isAndroid) setDeviceType('android');
+  else setDeviceType('other');
+}, []);
   useEffect(() => {
     localStorage.setItem('scoreboard-pointlabel', pointLabel);
   }, [pointLabel]);
@@ -551,13 +562,90 @@ function App() {
           onCancel={() => setConfirmDeleteBoardId(null)}
         />
       )}
-      {showInstallHelp && (
+      {/* {showInstallHelp && (
         <InstallHelpDialog
           isIos={platform.isIos}
           isAndroid={platform.isAndroid}
           onClose={() => setShowInstallHelp(false)}
         />
-      )}
+      )} */}
+      {!isInstalled && (
+  <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-8 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-4 z-40 animate-slideIn border-2 border-purple-500">
+    <div className="flex items-start gap-3">
+      <div className="text-3xl">📲</div>
+      <div className="flex-1">
+        <h3 className="font-bold text-gray-800 dark:text-white mb-1">Install App</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+          {deviceType === 'ios' 
+            ? 'Tap Share then "Add to Home Screen"' 
+            : 'Install for quick access & offline use'}
+        </p>
+        <div className="flex gap-2">
+          {deviceType === 'ios' ? (
+            <button
+              onClick={() => {
+                setShowInstallGuide(true);
+              }}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
+            >
+              Show Me How →
+            </button>
+          ) : (
+            <button
+              onClick={handleInstall}
+              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
+            >
+              Install Now
+            </button>
+          )}
+          <button
+  onClick={() => {
+    setIsInstalled(false);  
+    setShowInstallGuide(false);
+ 
+    localStorage.setItem('install-dismissed', Date.now());
+  }}
+  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm"
+>
+  Later
+</button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* لو عاوز تضيف نافذة التعليمات لآيفون - اختياري */}
+{showInstallGuide && deviceType === 'ios' && (
+  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6">
+      <div className="text-center mb-4">
+        <div className="text-5xl mb-3">📱</div>
+        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Install on iPhone</h3>
+        <div className="space-y-4 text-left">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">1</div>
+            <p className="text-gray-600 dark:text-gray-300">Tap the <span className="inline-block px-2 py-1 bg-gray-200 rounded">Share</span> button below</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">2</div>
+            <p className="text-gray-600 dark:text-gray-300">Scroll down and tap <span className="font-bold">"Add to Home Screen"</span></p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">3</div>
+            <p className="text-gray-600 dark:text-gray-300">Tap <span className="font-bold">"Add"</span> in the top right</p>
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() => setShowInstallGuide(false)}
+        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-semibold"
+      >
+        Got it
+      </button>
+    </div>
+  </div>
+)}
       <div className="max-w-6xl mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
@@ -585,24 +673,24 @@ function App() {
               >
                 {darkMode ? '☀️' : '🌙'}
               </button>
-              {!isInstalled && (
-                <button
-                  onClick={() => {
-                    if (canInstall) {
-                      handleInstall();
-                    } else {
-                      setShowInstallHelp(true);
-                    }
-                  }}
-                  className={`h-11 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 ${canInstall ? '' : 'opacity-60'}`}
-                  title={canInstall ? 'Install App' : 'Install not available'}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14" />
-                  </svg>
-                  <span className="hidden sm:inline">Install</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (!isInstalled && canInstall) {
+                    handleInstall();
+                  } else {
+                    setShowInstallHelp(true);
+                  }
+                }}
+                className={`h-11 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400`}
+                title={isInstalled ? 'App Installed' : 'Install App'}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14" />
+                </svg>
+                <span className="hidden sm:inline">
+                  {isInstalled ? 'Installed ✓' : 'Install'}
+                </span>
+              </button>
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
