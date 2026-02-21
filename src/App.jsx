@@ -96,43 +96,6 @@ function ConfirmDialog({
     </div>
   );
 }
-function InstallHelpDialog({ isIos, isAndroid, onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
-        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Install this app</h3>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">
-          Some browsers do not support app installation. If you do not see an install option, you can still use the app in the browser.
-        </p>
-        {isIos ? (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Tap the Share button in Safari.</li>
-            <li>Tap "Add to Home Screen".</li>
-            <li>Tap "Add".</li>
-          </ol>
-        ) : isAndroid ? (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open the browser menu.</li>
-            <li>Tap "Install app" or "Add to Home screen".</li>
-            <li>Confirm the install.</li>
-          </ol>
-        ) : (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open the browser menu.</li>
-            <li>Select "Install app" if available.</li>
-            <li>Confirm the install.</li>
-          </ol>
-        )}
-        <button
-          onClick={onClose}
-          className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
 function AchievementBadge({ icon, title, description }) {
   return (
     <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg p-3 text-white shadow-lg animate-scaleIn">
@@ -180,7 +143,9 @@ function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
-  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [deviceType, setDeviceType] = useState('');
   const [{ entries: history, index: historyIndex }, dispatchHistory] = useReducer(
     historyReducer,
     initialHistoryState
@@ -192,57 +157,90 @@ function App() {
   const [newBoardName, setNewBoardName] = useState("");
   const [pointLabel, setPointLabel] = useState("points");
   const [showSettings, setShowSettings] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
-const [deviceType, setDeviceType] = useState('');
   useEffect(() => {
-    const savedBoards = localStorage.getItem('scoreboard-boards');
-    const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
-    const savedPointLabel = localStorage.getItem('scoreboard-pointlabel');
-    if (savedDarkMode) setDarkMode(JSON.parse(savedDarkMode));
-    if (savedPointLabel) setPointLabel(savedPointLabel);
-    if (savedBoards) {
-      const parsed = JSON.parse(savedBoards);
-      setBoards(parsed);
-      if (parsed.length > 0) {
-        setCurrentBoardId(parsed[0].id);
+    try {
+      const savedBoards = localStorage.getItem('scoreboard-boards');
+      const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
+      const savedPointLabel = localStorage.getItem('scoreboard-pointlabel');
+      if (savedDarkMode) setDarkMode(JSON.parse(savedDarkMode));
+      if (savedPointLabel) setPointLabel(savedPointLabel);
+      if (savedBoards) {
+        const parsed = JSON.parse(savedBoards);
+        setBoards(parsed);
+        if (parsed.length > 0) {
+          setCurrentBoardId(parsed[0].id);
+        }
+      } else {
+        const defaultBoard = {
+          id: Date.now(),
+          name: 'Main Scoreboard',
+          people: [],
+          created: new Date().toISOString(),
+        };
+        setBoards([defaultBoard]);
+        setCurrentBoardId(defaultBoard.id);
       }
-    } else {
-      const defaultBoard = {
-        id: Date.now(),
-        name: 'Main Scoreboard',
-        people: [],
-        created: new Date().toISOString(),
-      };
-      setBoards([defaultBoard]);
-      setCurrentBoardId(defaultBoard.id);
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
     }
   }, []);
   useEffect(() => {
-    if (boards.length > 0) {
-      localStorage.setItem('scoreboard-boards', JSON.stringify(boards));
+    try {
+      if (boards.length > 0) {
+        localStorage.setItem('scoreboard-boards', JSON.stringify(boards));
+      }
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
     }
   }, [boards]);
   useEffect(() => {
-    localStorage.setItem('scoreboard-darkmode', JSON.stringify(darkMode));
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    try {
+      localStorage.setItem('scoreboard-darkmode', JSON.stringify(darkMode));
+      if (darkMode) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch (error) {
+      console.error('Error saving dark mode:', error);
     }
   }, [darkMode]);
+  useEffect(() => {
+    const ua = navigator.userAgent || '';
+    const isIos = /iphone|ipad|ipod/i.test(ua);
+    const isAndroid = /android/i.test(ua);
+    if (isIos) setDeviceType('ios');
+    else if (isAndroid) setDeviceType('android');
+    else setDeviceType('other');
+  }, []);
   useEffect(() => {
     const handleBeforeInstall = (event) => {
       event.preventDefault();
       setInstallPrompt(event);
+      try {
+        const dismissed = localStorage.getItem('install-dismissed');
+        const dismissedTime = dismissed ? parseInt(dismissed, 10) : 0;
+        const oneWeek = 7 * 24 * 60 * 60 * 1000;
+        if (isNaN(dismissedTime) || Date.now() - dismissedTime > oneWeek) {
+          setShowInstallBanner(true);
+        }
+      } catch (error) {
+        console.error('Error checking install dismissed:', error);
+        setShowInstallBanner(true);
+      }
     };
     const handleInstalled = () => {
       setIsInstalled(true);
       setInstallPrompt(null);
-      setToast({ message: 'App installed!', type: 'success' });
+      setShowInstallBanner(false);
+      setShowToast('App installed successfully!', 'success');
     };
     const checkInstalled = () => {
       const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       setIsInstalled(standalone);
+      if (standalone) {
+        setShowInstallBanner(false);
+      }
     };
     checkInstalled();
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -253,26 +251,14 @@ const [deviceType, setDeviceType] = useState('');
     };
   }, []);
   useEffect(() => {
-  const ua = navigator.userAgent || '';
-  const isIos = /iphone|ipad|ipod/i.test(ua);
-  const isAndroid = /android/i.test(ua);
-  
-  if (isIos) setDeviceType('ios');
-  else if (isAndroid) setDeviceType('android');
-  else setDeviceType('other');
-}, []);
-  useEffect(() => {
-    localStorage.setItem('scoreboard-pointlabel', pointLabel);
+    try {
+      localStorage.setItem('scoreboard-pointlabel', pointLabel);
+    } catch (error) {
+      console.error('Error saving point label:', error);
+    }
   }, [pointLabel]);
   const currentBoard = boards.find(b => b.id === currentBoardId);
   const people = currentBoard?.people || [];
-  const canInstall = installPrompt && !isInstalled;
-  const platform = useMemo(() => {
-    const ua = navigator.userAgent || '';
-    const isIos = /iphone|ipad|ipod/i.test(ua);
-    const isAndroid = /android/i.test(ua);
-    return { isIos, isAndroid };
-  }, []);
   const boardToDelete = confirmDeleteBoardId !== null
     ? boards.find((board) => board.id === confirmDeleteBoardId)
     : null;
@@ -293,7 +279,7 @@ const [deviceType, setDeviceType] = useState('');
       const nextIndex = historyIndex - 1;
       setPeople(history[nextIndex]);
       dispatchHistory({ type: 'set-index', index: nextIndex });
-      showToast('Undone', 'info');
+      setShowToast('Undone', 'info');
     }
   };
   const redo = () => {
@@ -301,21 +287,40 @@ const [deviceType, setDeviceType] = useState('');
       const nextIndex = historyIndex + 1;
       setPeople(history[nextIndex]);
       dispatchHistory({ type: 'set-index', index: nextIndex });
-      showToast('Redone', 'info');
+      setShowToast('Redone', 'info');
     }
   };
-  const showToast = (message, type = 'success') => {
+  const setShowToast = (message, type = 'success') => {
     setToast({ message, type });
   };
   const handleInstall = async () => {
-    if (!installPrompt) return;
-    installPrompt.prompt();
-    const choiceResult = await installPrompt.userChoice;
-    setInstallPrompt(null);
-    if (choiceResult?.outcome === 'accepted') {
-      showToast('Installing...', 'info');
-    } else {
-      showToast('Installation canceled', 'info');
+    if (deviceType === 'ios') {
+      setShowInstallGuide(true);
+      return;
+    }
+    if (!installPrompt) {
+      setShowInstallGuide(true);
+      return;
+    }
+    try {
+      const choiceResult = await installPrompt.prompt();
+      setInstallPrompt(null);
+      if (choiceResult?.outcome === 'accepted') {
+        setShowToast('Installing app...', 'info');
+      } else {
+        setShowToast('Installation canceled', 'info');
+      }
+    } catch (error) {
+      console.error('Install error:', error);
+      setShowToast('Installation failed', 'error');
+    }
+  };
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    try {
+      localStorage.setItem('install-dismissed', String(Date.now()));
+    } catch (error) {
+      console.error('Error saving install dismissed:', error);
     }
   };
   const triggerConfetti = () => {
@@ -332,7 +337,7 @@ const [deviceType, setDeviceType] = useState('');
   const handleAddOrUpdate = (e) => {
     e.preventDefault();
     if (!name.trim() || isNaN(points) || points === "") {
-      showToast('Please fill in all fields correctly', 'error');
+      setShowToast('Please fill in all fields correctly', 'error');
       return;
     }
     const numPoints = Number(points);
@@ -340,7 +345,7 @@ const [deviceType, setDeviceType] = useState('');
       p.name.toLowerCase() === name.trim().toLowerCase() && i !== editIndex
     );
     if (isDuplicate) {
-      showToast('A person with this name already exists', 'error');
+      setShowToast('A person with this name already exists', 'error');
       return;
     }
     if (editIndex !== null) {
@@ -354,7 +359,7 @@ const [deviceType, setDeviceType] = useState('');
       setPeople(updated);
       saveToHistory(people, updated);
       setEditIndex(null);
-      showToast('Person updated successfully!');
+      setShowToast('Person updated successfully!');
     } else {
       const newPerson = { 
         name: name.trim(), 
@@ -364,7 +369,7 @@ const [deviceType, setDeviceType] = useState('');
       const updated = [...people, newPerson];
       setPeople(updated);
       saveToHistory(people, updated);
-      showToast('Person added successfully!');
+      setShowToast('Person added successfully!');
     }
     setName("");
     setPoints("");
@@ -390,7 +395,7 @@ const [deviceType, setDeviceType] = useState('');
       setPoints("");
       setShowForm(false);
     }
-    showToast('Person deleted successfully!');
+    setShowToast('Person deleted successfully!');
     setConfirmDelete(null);
   };
   const adjustPoints = (idx, delta) => {
@@ -404,7 +409,7 @@ const [deviceType, setDeviceType] = useState('');
     setPeople(updated);
     saveToHistory(people, updated);
     checkAchievements(updated[idx], oldPoints);
-    showToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
+    setShowToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
   };
   const resetAllPoints = () => {
     if (people.length === 0) return;
@@ -421,7 +426,7 @@ const [deviceType, setDeviceType] = useState('');
     }));
     setPeople(updated);
     saveToHistory(people, updated);
-    showToast('All points reset!', 'info');
+    setShowToast('All points reset!', 'info');
     setConfirmReset(false);
   };
   const confirmClearAction = () => {
@@ -431,12 +436,12 @@ const [deviceType, setDeviceType] = useState('');
     setName("");
     setPoints("");
     setShowForm(false);
-    showToast('All data cleared!', 'info');
+    setShowToast('All data cleared!', 'info');
     setConfirmClear(false);
   };
   const createBoard = () => {
     if (!newBoardName.trim()) {
-      showToast('Please enter a board name', 'error');
+      setShowToast('Please enter a board name', 'error');
       return;
     }
     const newBoard = {
@@ -449,11 +454,11 @@ const [deviceType, setDeviceType] = useState('');
     setCurrentBoardId(newBoard.id);
     setNewBoardName("");
     setShowBoardManager(false);
-    showToast('Board created!', 'success');
+    setShowToast('Board created!', 'success');
   };
   const deleteBoard = (boardId) => {
     if (boards.length === 1) {
-      showToast('Cannot delete the last board', 'error');
+      setShowToast('Cannot delete the last board', 'error');
       return;
     }
     setConfirmDeleteBoardId(boardId);
@@ -461,13 +466,13 @@ const [deviceType, setDeviceType] = useState('');
   const confirmDeleteBoardAction = () => {
     if (confirmDeleteBoardId === null) return;
     if (boards.length === 1) {
-      showToast('Cannot delete the last board', 'error');
+      setShowToast('Cannot delete the last board', 'error');
       setConfirmDeleteBoardId(null);
       return;
     }
     const remaining = boards.filter(b => b.id !== confirmDeleteBoardId);
     if (remaining.length === 0) {
-      showToast('Cannot delete the last board', 'error');
+      setShowToast('Cannot delete the last board', 'error');
       setConfirmDeleteBoardId(null);
       return;
     }
@@ -476,20 +481,22 @@ const [deviceType, setDeviceType] = useState('');
       setCurrentBoardId(remaining[0].id);
     }
     setConfirmDeleteBoardId(null);
-    showToast('Board deleted', 'info');
+    setShowToast('Board deleted', 'info');
   };
   const filteredPeople = people.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
   const sortedPeople = useMemo(() => {
-  return [...filteredPeople].sort((a, b) => {
-    switch (sortBy) {
-      case 'points-desc': return b.points - a.points;
-      case 'points-asc': return a.points - b.points;
-      case 'name-asc': return a.name.localeCompare(b.name);
-      case 'name-desc': return b.name.localeCompare(a.name);
-      default: return 0; } });
-}, [filteredPeople, sortBy]);
+    return [...filteredPeople].sort((a, b) => {
+      switch (sortBy) {
+        case 'points-desc': return b.points - a.points;
+        case 'points-asc': return a.points - b.points;
+        case 'name-asc': return a.name.localeCompare(b.name);
+        case 'name-desc': return b.name.localeCompare(a.name);
+        default: return 0;
+      }
+    });
+  }, [filteredPeople, sortBy]);
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100'} p-4 md:p-8`}>
       <style>{`
@@ -562,90 +569,84 @@ const [deviceType, setDeviceType] = useState('');
           onCancel={() => setConfirmDeleteBoardId(null)}
         />
       )}
-      {/* {showInstallHelp && (
-        <InstallHelpDialog
-          isIos={platform.isIos}
-          isAndroid={platform.isAndroid}
-          onClose={() => setShowInstallHelp(false)}
-        />
-      )} */}
-      {!isInstalled && (
-  <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-8 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-4 z-40 animate-slideIn border-2 border-purple-500">
-    <div className="flex items-start gap-3">
-      <div className="text-3xl">📲</div>
-      <div className="flex-1">
-        <h3 className="font-bold text-gray-800 dark:text-white mb-1">Install App</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-          {deviceType === 'ios' 
-            ? 'Tap Share then "Add to Home Screen"' 
-            : 'Install for quick access & offline use'}
-        </p>
-        <div className="flex gap-2">
-          {deviceType === 'ios' ? (
-            <button
-              onClick={() => {
-                setShowInstallGuide(true);
-              }}
-              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
-            >
-              Show Me How →
-            </button>
-          ) : (
-            <button
-              onClick={handleInstall}
-              className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
-            >
-              Install Now
-            </button>
-          )}
-          <button
-  onClick={() => {
-    setIsInstalled(false);  
-    setShowInstallGuide(false);
- 
-    localStorage.setItem('install-dismissed', Date.now());
-  }}
-  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm"
->
-  Later
-</button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
-{/* لو عاوز تضيف نافذة التعليمات لآيفون - اختياري */}
-{showInstallGuide && deviceType === 'ios' && (
-  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-    <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6">
-      <div className="text-center mb-4">
-        <div className="text-5xl mb-3">📱</div>
-        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">Install on iPhone</h3>
-        <div className="space-y-4 text-left">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">1</div>
-            <p className="text-gray-600 dark:text-gray-300">Tap the <span className="inline-block px-2 py-1 bg-gray-200 rounded">Share</span> button below</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">2</div>
-            <p className="text-gray-600 dark:text-gray-300">Scroll down and tap <span className="font-bold">"Add to Home Screen"</span></p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">3</div>
-            <p className="text-gray-600 dark:text-gray-300">Tap <span className="font-bold">"Add"</span> in the top right</p>
+      {!isInstalled && showInstallBanner && (
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-8 sm:w-80 bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-4 z-40 animate-slideIn border-2 border-purple-500">
+          <div className="flex items-start gap-3">
+            <div className="text-3xl">📲</div>
+            <div className="flex-1">
+              <h3 className="font-bold text-gray-800 dark:text-white mb-1">Install App</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                {deviceType === 'ios' 
+                  ? 'Tap Share then "Add to Home Screen"' 
+                  : 'Install for quick access & offline use'}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleInstall}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-semibold"
+                >
+                  {deviceType === 'ios' ? 'Show Me How →' : 'Install Now'}
+                </button>
+                <button
+                  onClick={dismissInstallBanner}
+                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Later
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-      <button
-        onClick={() => setShowInstallGuide(false)}
-        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-semibold"
-      >
-        Got it
-      </button>
-    </div>
-  </div>
-)}
+      )}
+      {showInstallGuide && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6">
+            <div className="text-center mb-4">
+              <div className="text-5xl mb-3">📱</div>
+              <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
+                {deviceType === 'ios' ? 'Install on iPhone' : 'Install App'}
+              </h3>
+              {deviceType === 'ios' ? (
+                <div className="space-y-4 text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">1</div>
+                    <p className="text-gray-600 dark:text-gray-300">Tap the <span className="inline-block px-2 py-1 bg-gray-200 rounded">Share</span> button below</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">2</div>
+                    <p className="text-gray-600 dark:text-gray-300">Scroll down and tap <span className="font-bold">"Add to Home Screen"</span></p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">3</div>
+                    <p className="text-gray-600 dark:text-gray-300">Tap <span className="font-bold">"Add"</span> in the top right</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 text-left">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">1</div>
+                    <p className="text-gray-600 dark:text-gray-300">Open the browser menu</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">2</div>
+                    <p className="text-gray-600 dark:text-gray-300">Tap <span className="font-bold">"Install app"</span> or <span className="font-bold">"Add to Home screen"</span></p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center font-bold text-purple-600">3</div>
+                    <p className="text-gray-600 dark:text-gray-300">Confirm the installation</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowInstallGuide(false)}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-lg font-semibold"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto">
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
@@ -673,24 +674,31 @@ const [deviceType, setDeviceType] = useState('');
               >
                 {darkMode ? '☀️' : '🌙'}
               </button>
-              <button
-                onClick={() => {
-                  if (!isInstalled && canInstall) {
-                    handleInstall();
-                  } else {
-                    setShowInstallHelp(true);
-                  }
-                }}
-                className={`h-11 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400`}
-                title={isInstalled ? 'App Installed' : 'Install App'}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14" />
-                </svg>
-                <span className="hidden sm:inline">
-                  {isInstalled ? 'Installed ✓' : 'Install'}
-                </span>
-              </button>
+              {!isInstalled && (
+                <button
+                  onClick={handleInstall}
+                  className="h-11 px-3 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 text-sm font-semibold active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                  title={deviceType === 'ios' ? 'How to install' : 'Install App'}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v10m0 0l-3-3m3 3l3-3M5 17h14" />
+                  </svg>
+                  <span className="hidden sm:inline">
+                    {deviceType === 'ios' ? 'How to Install' : 'Install'}
+                  </span>
+                </button>
+              )}
+              {isInstalled && (
+                <button
+                  className="h-11 px-3 bg-green-100 dark:bg-green-900 rounded-lg flex items-center gap-2 text-sm font-semibold text-green-700 dark:text-green-300 cursor-default"
+                  title="App Installed"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="hidden sm:inline">Installed ✓</span>
+                </button>
+              )}
               <button
                 onClick={() => setShowSettings(!showSettings)}
                 className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
