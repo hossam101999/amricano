@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo, useReducer } from 'react';
-
-const createId = () =>
-  typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+import TargetScoreGame from './TargetScoreGame';
+import AchievementBadge from './components/AchievementBadge';
+import Confetti from './components/Confetti';
+import ConfirmDialog from './components/ConfirmDialog';
+import InstallHelpDialog from './components/InstallHelpDialog';
+import Toast from './components/Toast';
+import { avatarColor } from './utils/avatar';
+import { historyReducer, initialHistoryState } from './utils/history';
+import { createId } from './utils/id';
 
 const normalizePerson = (person) => {
   const rawPoints = person?.points;
@@ -32,189 +36,8 @@ const createDefaultBoard = () => ({
   people: [],
   created: new Date().toISOString(),
 });
-function avatarColor(name) {
-  const colors = [
-    'bg-gradient-to-br from-pink-400 via-fuchsia-500 to-indigo-500',
-    'bg-gradient-to-br from-green-400 via-teal-400 to-blue-500',
-    'bg-gradient-to-br from-yellow-400 via-orange-400 to-pink-500',
-    'bg-gradient-to-br from-indigo-400 via-purple-400 to-pink-400',
-    'bg-gradient-to-br from-blue-400 via-cyan-400 to-teal-400',
-    'bg-gradient-to-br from-red-400 via-rose-400 to-pink-400',
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++)
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
-}
-function Confetti() {
-  const pieces = useMemo(
-    () =>
-      [...Array(50)].map(() => ({
-        left: `${Math.random() * 100}%`,
-        delay: `${Math.random() * 3}s`,
-        duration: `${3 + Math.random() * 2}s`,
-        color: ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f'][Math.floor(Math.random() * 6)],
-      })),
-    []
-  );
-  return (
-    <div className="fixed inset-0 pointer-events-none z-50">
-      {pieces.map((piece, i) => (
-        <div
-          key={i}
-          className="absolute animate-confetti"
-          style={{
-            left: piece.left,
-            top: '-10px',
-            animationDelay: piece.delay,
-            animationDuration: piece.duration,
-          }}
-        >
-          <div
-            className="w-2 h-2 rounded-full"
-            style={{
-              backgroundColor: piece.color,
-            }}
-          />
-        </div>
-      ))}
-    </div>
-  );
-}
-function Toast({ message, type = 'success', onClose }) {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-  const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
-  return (
-    <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-4 ${bgColor} text-white px-4 sm:px-6 py-3 rounded-lg shadow-lg z-50 animate-slideIn`}>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm sm:text-base">{message}</span>
-        <button
-          onClick={onClose}
-          aria-label="Close notification"
-          className="h-8 w-8 rounded-full text-white/90 hover:text-white hover:bg-white/10 font-bold text-lg leading-none transition-colors"
-        >
-          ×
-        </button>
-      </div>
-    </div>
-  );
-}
-function ConfirmDialog({
-  title = 'Confirm action',
-  message,
-  confirmLabel = 'Confirm',
-  confirmTone = 'danger',
-  onConfirm,
-  onCancel,
-}) {
-  const confirmClass =
-    confirmTone === 'warning'
-      ? 'bg-orange-500 hover:bg-orange-600'
-      : confirmTone === 'primary'
-      ? 'bg-purple-500 hover:bg-purple-600'
-      : 'bg-red-500 hover:bg-red-600';
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
-        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">{title}</h3>
-        <p className="text-gray-600 dark:text-gray-300 mb-6">{message}</p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={onCancel}
-            className="w-full sm:flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`w-full sm:flex-1 px-4 py-2 ${confirmClass} text-white rounded-lg font-semibold transition-colors`}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-function InstallHelpDialog({ isIos, isAndroid, onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
-        <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Install this app</h3>
-        <p className="text-gray-600 dark:text-gray-300 mb-4">
-          The install option appears only on supported browsers and requires a secure connection (HTTPS).
-          If you do not see it, you can still use the app in the browser.
-        </p>
-        {isIos ? (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open this app in Safari (iOS does not support install from Chrome or other browsers).</li>
-            <li>Tap the Share button.</li>
-            <li>Scroll and tap "Add to Home Screen".</li>
-            <li>Edit the name if you want, then tap "Add".</li>
-          </ol>
-        ) : isAndroid ? (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open this app in Chrome or Samsung Internet.</li>
-            <li>Open the browser menu (three dots).</li>
-            <li>Tap "Install app" or "Add to Home screen".</li>
-            <li>Confirm the install.</li>
-          </ol>
-        ) : (
-          <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open this app in Chrome or Edge on desktop.</li>
-            <li>Look for the install icon in the address bar, or open the browser menu.</li>
-            <li>Select "Install app" or "Install Scoreboard".</li>
-            <li>Confirm the install.</li>
-          </ol>
-        )}
-        <div className="text-xs text-gray-500 dark:text-gray-400 mb-5">
-          If install is missing: refresh the page, leave private/incognito mode, or check that the site is served over HTTPS.
-        </div>
-        <button
-          onClick={onClose}
-          className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-function AchievementBadge({ icon, title, description }) {
-  return (
-    <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg p-3 text-white shadow-lg animate-scaleIn">
-      <div className="text-3xl mb-1">{icon}</div>
-      <div className="font-bold text-sm">{title}</div>
-      <div className="text-xs opacity-90">{description}</div>
-    </div>
-  );
-}
-const initialHistoryState = { entries: [], index: -1 };
-function historyReducer(state, action) {
-  switch (action.type) {
-    case 'reset': {
-      const people = Array.isArray(action.people) ? action.people : [];
-      return { entries: [people], index: 0 };
-    }
-    case 'record': {
-      const prevPeople = Array.isArray(action.prev)
-        ? action.prev
-        : state.entries[state.index] || [];
-      const nextPeople = Array.isArray(action.next) ? action.next : [];
-      const base = state.entries.length ? state.entries.slice(0, state.index + 1) : [prevPeople];
-      const entries = [...base, nextPeople];
-      return { entries, index: entries.length - 1 };
-    }
-    case 'set-index':
-      return { ...state, index: action.index };
-    default:
-      return state;
-  }
-}
 function App() {
+  const [activeView, setActiveView] = useState('scoreboard');
   const [boards, setBoards] = useState([]);
   const [currentBoardId, setCurrentBoardId] = useState(null);
   const [name, setName] = useState("");
@@ -550,7 +373,9 @@ function App() {
     return rankMap;
   }, [people]);
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100'} p-4 md:p-8`}>
+    <>
+      {activeView === 'scoreboard' ? (
+        <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100'} p-4 md:p-8`}>
       <style>{`
         @keyframes slideIn {
           from { transform: translateX(100%); opacity: 0; }
@@ -654,6 +479,13 @@ function App() {
                 title="Toggle Dark Mode"
               >
                 {darkMode ? '☀️' : '🌙'}
+              </button>
+              <button
+                onClick={() => setActiveView('game')}
+                className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                title="Open Target Score Game"
+              >
+                🧮
               </button>
               {!isInstalled && (
                 <button
@@ -943,6 +775,10 @@ function App() {
         </button> 
       </div>
     </div>
+      ) : (
+        <TargetScoreGame onBack={() => setActiveView('scoreboard')} showToast={showToast} />
+      )}
+    </>
   );
 }
 export default App;
