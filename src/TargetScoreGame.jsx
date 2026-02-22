@@ -1,18 +1,18 @@
-import { useMemo, useReducer, useState } from 'react';
+import { useMemo, useState, useEffect, useReducer } from 'react';
 import { createId } from './utils/id';
 import { historyReducer, initialHistoryState } from './utils/history';
 
-function TargetScoreGame({ onBack, showToast }) {
+function TargetScoreGame({ onBack, showToast: externalShowToast }) {
   const [stage, setStage] = useState('setup');
   const [targetScoreInput, setTargetScoreInput] = useState('150');
   const [playerCount, setPlayerCount] = useState(2);
   const [playerNames, setPlayerNames] = useState(['', '']);
   const [players, setPlayers] = useState([]);
   const [inputs, setInputs] = useState({});
-  const [mode, setMode] = useState('score');
-  const [calcInput, setCalcInput] = useState('');
-  const [calcSelectedId, setCalcSelectedId] = useState('');
-  const [calcError, setCalcError] = useState('');
+  const [gameOver, setGameOver] = useState(false);
+  const [winners, setWinners] = useState([]);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [toastQueue, setToastQueue] = useState([]);
   const [{ entries: history, index: historyIndex }, dispatchHistory] = useReducer(
     historyReducer,
     initialHistoryState
@@ -20,6 +20,41 @@ function TargetScoreGame({ onBack, showToast }) {
   const [actionLog, setActionLog] = useState([]);
 
   const targetScore = Number(targetScoreInput);
+  const playerColors = [
+    '#E69F00',
+    '#56B4E9',
+    '#009E73',
+    '#F0E442',
+    '#0072B2',
+    '#D55E00',
+    '#CC79A7'
+  ];
+
+  const showToast = (message, type = 'info') => {
+    setToastQueue(prev => [...prev, { id: Date.now() + Math.random(), message, type }]);
+  };
+
+  useEffect(() => {
+    if (toastQueue.length > 0 && externalShowToast) {
+      const [current] = toastQueue;
+      externalShowToast(current.message, current.type);
+      setToastQueue(prev => prev.slice(1));
+    }
+  }, [toastQueue, externalShowToast]);
+
+  useEffect(() => {
+    if (players.length === 0 || stage !== 'play') return;
+    const newWinners = players.filter(p => p.score >= targetScore);
+    if (newWinners.length > 0) {
+      setGameOver(true);
+      setWinners(newWinners);
+      if (newWinners.length === 1) {
+        showToast(`🎉 ${newWinners[0].name} wins!`, 'success');
+      } else {
+        showToast(`🎉 It's a tie between ${newWinners.map(w => w.name).join(' and ')}!`, 'success');
+      }
+    }
+  }, [players, targetScore, stage]);
 
   const handlePlayerCountChange = (count) => {
     setPlayerCount(count);
@@ -38,20 +73,20 @@ function TargetScoreGame({ onBack, showToast }) {
     const normalizedNames = playerNames.map((name, index) =>
       name.trim() ? name.trim() : `Player ${index + 1}`
     );
-    const createdPlayers = normalizedNames.map((name) => ({
+    const createdPlayers = normalizedNames.map((name, index) => ({
       id: createId(),
       name,
       score: 0,
+      color: playerColors[index % playerColors.length],
     }));
     setPlayers(createdPlayers);
     setInputs({});
-    setMode('score');
-    setCalcInput('');
-    setCalcError('');
-    setCalcSelectedId(createdPlayers[0]?.id || '');
-    dispatchHistory({ type: 'reset', people: createdPlayers });
+    setGameOver(false);
+    setWinners([]);
     setActionLog([]);
+    dispatchHistory({ type: 'reset', people: createdPlayers });
     setStage('play');
+    showToast('Game started! First to reach the target wins!', 'success');
   };
 
   const recordAction = (logEntry) => {
@@ -61,19 +96,35 @@ function TargetScoreGame({ onBack, showToast }) {
     });
   };
 
-  const applyPlayerDelta = (playerId, delta, source = 'manual') => {
+  const addScore = (playerId) => {
+    if (gameOver) {
+      showToast('Game is over! Start a new game to continue playing.', 'error');
+      return;
+    }
+    const rawValue = inputs[playerId];
+    if (!rawValue) {
+      showToast('Enter a value first', 'error');
+      return;
+    }
+    const delta = Number(rawValue);
     if (!Number.isFinite(delta)) {
       showToast('Enter a valid number', 'error');
       return;
     }
+    
     const targetPlayer = players.find((player) => player.id === playerId);
-    if (!targetPlayer) {
-      showToast('Select a player', 'error');
+    if (!targetPlayer) return;
+    
+    const isAlreadyWinner = targetPlayer.score >= targetScore;
+    if (isAlreadyWinner) {
+      showToast(`${targetPlayer.name} has already won!`, 'error');
       return;
     }
+    
     const updated = players.map((player) =>
       player.id === playerId ? { ...player, score: player.score + delta } : player
     );
+    
     setPlayers(updated);
     dispatchHistory({ type: 'record', prev: players, next: updated });
     recordAction({
@@ -83,22 +134,8 @@ function TargetScoreGame({ onBack, showToast }) {
       delta,
       score: targetPlayer.score + delta,
       timestamp: Date.now(),
-      source,
     });
-  };
-
-  const addScore = (playerId) => {
-    const rawValue = inputs[playerId];
-    if (rawValue === undefined || rawValue === '') {
-      showToast('Enter a value first', 'error');
-      return;
-    }
-    const delta = Number(rawValue);
-    if (!Number.isFinite(delta)) {
-      showToast('Enter a valid number', 'error');
-      return;
-    }
-    applyPlayerDelta(playerId, delta, 'manual');
+    
     setInputs((prev) => ({ ...prev, [playerId]: '' }));
   };
 
@@ -107,10 +144,12 @@ function TargetScoreGame({ onBack, showToast }) {
     const resetPlayers = players.map((player) => ({ ...player, score: 0 }));
     setPlayers(resetPlayers);
     setInputs({});
-    setCalcInput('');
-    setCalcError('');
+    setGameOver(false);
+    setWinners([]);
+    setShowResetConfirm(false);
     dispatchHistory({ type: 'reset', people: resetPlayers });
     setActionLog([]);
+    showToast('Scores reset', 'info');
   };
 
   const undo = () => {
@@ -132,59 +171,12 @@ function TargetScoreGame({ onBack, showToast }) {
   };
 
   const visibleLog = actionLog.slice(0, historyIndex);
-  const ranking = useMemo(() => [...players].sort((a, b) => a.score - b.score), [players]);
+  const ranking = useMemo(() => [...players].sort((a, b) => b.score - a.score), [players]);
 
-  const sanitizeExpression = (expression) => expression.replace(/[^0-9+\-*/().]/g, '');
-
-  const evaluateExpression = (expression) => {
-    const cleaned = sanitizeExpression(expression);
-    if (!cleaned) {
-      return { error: 'Enter a calculation' };
+  const handleKeyPress = (e, playerId) => {
+    if (e.key === 'Enter') {
+      addScore(playerId);
     }
-    try {
-      const result = Function(`"use strict"; return (${cleaned})`)();
-      if (!Number.isFinite(result)) {
-        return { error: 'Invalid calculation' };
-      }
-      const rounded = Math.round(result * 100000) / 100000;
-      return { result: rounded };
-    } catch (error) {
-      return { error: 'Invalid calculation' };
-    }
-  };
-
-  const appendCalc = (value) => {
-    setCalcError('');
-    setCalcInput((prev) => `${prev}${value}`);
-  };
-
-  const clearCalc = () => {
-    setCalcInput('');
-    setCalcError('');
-  };
-
-  const deleteCalc = () => {
-    setCalcInput((prev) => prev.slice(0, -1));
-  };
-
-  const calculateResult = () => {
-    const { result, error } = evaluateExpression(calcInput);
-    if (error) {
-      setCalcError(error);
-      return null;
-    }
-    setCalcInput(String(result));
-    setCalcError('');
-    return result;
-  };
-
-  const applyCalculatorResult = () => {
-    const { result, error } = evaluateExpression(calcInput);
-    if (error) {
-      setCalcError(error);
-      return;
-    }
-    applyPlayerDelta(calcSelectedId, result, 'calculator');
   };
 
   return (
@@ -199,7 +191,7 @@ function TargetScoreGame({ onBack, showToast }) {
                   Target Score Game
                 </h1>
                 <p className="text-sm text-gray-500">
-                  Reach the target and you lose the match.
+                  First to reach or exceed the target wins!
                 </p>
               </div>
             </div>
@@ -208,16 +200,10 @@ function TargetScoreGame({ onBack, showToast }) {
                 onClick={onBack}
                 className="h-10 px-3 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold transition-colors"
               >
-                Back to Scoreboard
+                ← Back
               </button>
               {stage === 'play' && (
                 <>
-                  <button
-                    onClick={() => setMode(mode === 'score' ? 'calculator' : 'score')}
-                    className="h-10 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition-colors"
-                  >
-                    {mode === 'score' ? 'Calculator Mode' : 'Score Mode'}
-                  </button>
                   <button
                     onClick={undo}
                     disabled={historyIndex <= 0}
@@ -235,7 +221,7 @@ function TargetScoreGame({ onBack, showToast }) {
                     ↷
                   </button>
                   <button
-                    onClick={resetScores}
+                    onClick={() => setShowResetConfirm(true)}
                     className="h-10 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold transition-colors"
                   >
                     Reset Game
@@ -251,30 +237,28 @@ function TargetScoreGame({ onBack, showToast }) {
             <h2 className="text-xl font-bold text-gray-900 mb-4">Game Setup</h2>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor="target-score" className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Target Score
                 </label>
                 <input
-                  id="target-score"
                   type="number"
                   min="1"
                   value={targetScoreInput}
                   onChange={(e) => setTargetScoreInput(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   placeholder="150"
                 />
               </div>
               <div>
-                <label htmlFor="player-count" className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Number of Players
                 </label>
                 <select
-                  id="player-count"
                   value={playerCount}
                   onChange={(e) => handlePlayerCountChange(Number(e.target.value))}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
                 >
-                  {[2, 3, 4].map((count) => (
+                  {[2, 3, 4, 5, 6].map((count) => (
                     <option key={count} value={count}>
                       {count} Players
                     </option>
@@ -319,26 +303,39 @@ function TargetScoreGame({ onBack, showToast }) {
                     <p className="text-sm text-gray-500">Target score: {targetScore}</p>
                   </div>
                 </div>
-                {mode === 'score' ? (
-                  <div className="space-y-3">
-                    {players.map((player) => {
-                      const isLoser = Number.isFinite(targetScore) && player.score >= targetScore;
-                      return (
-                        <div
-                          key={player.id}
-                          className="border-2 border-gray-100 rounded-xl p-4 flex flex-col gap-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="text-lg font-bold text-gray-900">{player.name}</div>
-                              <div className="text-sm text-gray-500">Total: {player.score}</div>
-                            </div>
-                            {isLoser && (
-                              <div className="px-3 py-1 rounded-full bg-red-100 text-red-600 font-semibold text-xs">
-                                LOST
+                
+                {gameOver && winners.length > 0 && (
+                  <div className="mb-4 p-4 bg-gradient-to-r from-yellow-100 to-amber-100 text-amber-800 rounded-lg text-center font-bold text-lg">
+                    🎉 {winners.map(w => w.name).join(', ')} {winners.length > 1 ? 'WIN' : 'WINS'}! 🎉
+                  </div>
+                )}
+                
+                <div className="space-y-3">
+                  {players.map((player) => {
+                    const isWinner = player.score >= targetScore;
+                    return (
+                      <div
+                        key={player.id}
+                        className={`border-2 rounded-xl p-4 flex flex-col gap-3 transition-all ${
+                          isWinner ? 'border-yellow-400 bg-yellow-50' : 'border-gray-100'
+                        }`}
+                        style={{ borderLeftColor: player.color, borderLeftWidth: '4px' }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="text-lg font-bold text-gray-900">{player.name}</div>
+                            {isWinner && (
+                              <div className="px-3 py-1 rounded-full bg-yellow-400 text-yellow-900 font-bold text-xs">
+                                👑 WINNER
                               </div>
                             )}
                           </div>
+                          <div className="text-sm font-semibold">
+                            Score: <span className="text-lg">{player.score}</span>
+                          </div>
+                        </div>
+                        
+                        {!gameOver && !isWinner && (
                           <div className="flex flex-col sm:flex-row gap-3">
                             <input
                               type="number"
@@ -346,136 +343,67 @@ function TargetScoreGame({ onBack, showToast }) {
                               onChange={(e) =>
                                 setInputs((prev) => ({ ...prev, [player.id]: e.target.value }))
                               }
-                              className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
+                              onKeyPress={(e) => handleKeyPress(e, player.id)}
+                              className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               placeholder="Enter points"
                             />
                             <button
                               onClick={() => addScore(player.id)}
-                              className="h-11 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold"
+                              className="h-11 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold transition-colors"
                             >
                               Add
                             </button>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-gray-900 text-white rounded-xl p-4 text-right text-2xl font-bold min-h-[64px]">
-                      {calcInput || '0'}
-                    </div>
-                    {calcError && (
-                      <div className="text-sm text-red-500 font-semibold">{calcError}</div>
-                    )}
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Assign Result To
-                      </label>
-                      <select
-                        value={calcSelectedId}
-                        onChange={(e) => setCalcSelectedId(e.target.value)}
-                        className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none"
-                      >
-                        {players.map((player) => (
-                          <option key={player.id} value={player.id}>
-                            {player.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {['7', '8', '9', '/'].map((value) => (
-                        <button
-                          key={value}
-                          onClick={() => appendCalc(value)}
-                          className="h-12 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-700"
-                        >
-                          {value}
-                        </button>
-                      ))}
-                      {['4', '5', '6', '*'].map((value) => (
-                        <button
-                          key={value}
-                          onClick={() => appendCalc(value)}
-                          className="h-12 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-700"
-                        >
-                          {value}
-                        </button>
-                      ))}
-                      {['1', '2', '3', '-'].map((value) => (
-                        <button
-                          key={value}
-                          onClick={() => appendCalc(value)}
-                          className="h-12 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-gray-700"
-                        >
-                          {value}
-                        </button>
-                      ))}
-                      {['0', '.', '=', '+'].map((value) => (
-                        <button
-                          key={value}
-                          onClick={() => (value === '=' ? calculateResult() : appendCalc(value))}
-                          className={`h-12 rounded-lg font-bold ${
-                            value === '='
-                              ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                          }`}
-                        >
-                          {value}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={clearCalc}
-                        className="h-11 rounded-lg bg-gray-200 hover:bg-gray-300 font-semibold text-gray-700"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        onClick={deleteCalc}
-                        className="h-11 rounded-lg bg-gray-200 hover:bg-gray-300 font-semibold text-gray-700"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                    <button
-                      onClick={applyCalculatorResult}
-                      className="h-12 w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg"
-                    >
-                      Add Result To Player
-                    </button>
-                  </div>
+                        )}
+                        
+                        {gameOver && !isWinner && (
+                          <div className="text-center py-2 text-gray-500 italic">
+                            Game Over - {winners.map(w => w.name).join(', ')} {winners.length > 1 ? 'have' : 'has'} won!
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {gameOver && (
+                  <button
+                    onClick={() => setStage('setup')}
+                    className="mt-4 w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                  >
+                    New Game
+                  </button>
                 )}
               </div>
             </div>
+
             <div className="space-y-4">
               <div className="bg-white rounded-2xl shadow-xl p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-3">Ranking (Low to High)</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-3">Ranking</h3>
                 <div className="space-y-2">
                   {ranking.map((player, index) => (
                     <div key={player.id} className="flex items-center justify-between text-sm">
                       <span className="font-semibold text-gray-700">
-                        {index + 1}. {player.name}
+                        {index + 1}. {player.name} {index === 0 && gameOver && '👑'}
                       </span>
                       <span className="text-gray-500">{player.score}</span>
                     </div>
                   ))}
                 </div>
               </div>
+
               <div className="bg-white rounded-2xl shadow-xl p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-3">History</h3>
                 {visibleLog.length === 0 ? (
                   <p className="text-sm text-gray-500">No score changes yet.</p>
                 ) : (
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-sm max-h-60 overflow-y-auto">
                     {visibleLog
                       .slice()
                       .reverse()
                       .map((entry) => (
-                        <div key={entry.id} className="flex items-center justify-between">
-                          <span className="text-gray-700">
+                        <div key={entry.id} className="flex items-center justify-between border-b border-gray-100 pb-1">
+                          <span>
                             {entry.name} {entry.delta >= 0 ? '+' : ''}
                             {entry.delta}
                           </span>
@@ -489,6 +417,29 @@ function TargetScoreGame({ onBack, showToast }) {
           </div>
         )}
       </div>
+
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+            <h3 className="text-xl font-bold mb-4">Reset Game?</h3>
+            <p className="text-gray-600 mb-6">This will reset all scores to zero. This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={resetScores}
+                className="flex-1 h-10 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
+              >
+                Reset
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="flex-1 h-10 bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
