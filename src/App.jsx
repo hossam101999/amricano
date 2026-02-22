@@ -1,4 +1,37 @@
 import { useState, useEffect, useMemo, useReducer } from 'react';
+
+const createId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const normalizePerson = (person) => {
+  const rawPoints = person?.points;
+  const parsedPoints = typeof rawPoints === 'number' ? rawPoints : Number(rawPoints);
+  return {
+    id: person?.id ?? createId(),
+    name: typeof person?.name === 'string' ? person.name : '',
+    points: Number.isFinite(parsedPoints) ? parsedPoints : 0,
+    created: person?.created ?? Date.now(),
+  };
+};
+
+const normalizeBoard = (board, fallbackName) => ({
+  id: board?.id ?? createId(),
+  name:
+    typeof board?.name === 'string' && board.name.trim()
+      ? board.name
+      : fallbackName || 'Scoreboard',
+  people: Array.isArray(board?.people) ? board.people.map(normalizePerson) : [],
+  created: board?.created ?? new Date().toISOString(),
+});
+
+const createDefaultBoard = () => ({
+  id: createId(),
+  name: 'Main Scoreboard',
+  people: [],
+  created: new Date().toISOString(),
+});
 function avatarColor(name) {
   const colors = [
     'bg-gradient-to-br from-pink-400 via-fuchsia-500 to-indigo-500',
@@ -14,23 +47,33 @@ function avatarColor(name) {
   return colors[Math.abs(hash) % colors.length];
 }
 function Confetti() {
+  const pieces = useMemo(
+    () =>
+      [...Array(50)].map(() => ({
+        left: `${Math.random() * 100}%`,
+        delay: `${Math.random() * 3}s`,
+        duration: `${3 + Math.random() * 2}s`,
+        color: ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f'][Math.floor(Math.random() * 6)],
+      })),
+    []
+  );
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
-      {[...Array(50)].map((_, i) => (
+      {pieces.map((piece, i) => (
         <div
           key={i}
           className="absolute animate-confetti"
           style={{
-            left: `${Math.random() * 100}%`,
+            left: piece.left,
             top: '-10px',
-            animationDelay: `${Math.random() * 3}s`,
-            animationDuration: `${3 + Math.random() * 2}s`,
+            animationDelay: piece.delay,
+            animationDuration: piece.duration,
           }}
         >
           <div
             className="w-2 h-2 rounded-full"
             style={{
-              backgroundColor: ['#ff0', '#f0f', '#0ff', '#f00', '#0f0', '#00f'][Math.floor(Math.random() * 6)],
+              backgroundColor: piece.color,
             }}
           />
         </div>
@@ -102,27 +145,34 @@ function InstallHelpDialog({ isIos, isAndroid, onClose }) {
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scaleIn">
         <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Install this app</h3>
         <p className="text-gray-600 dark:text-gray-300 mb-4">
-          Some browsers do not support app installation. If you do not see an install option, you can still use the app in the browser.
+          The install option appears only on supported browsers and requires a secure connection (HTTPS).
+          If you do not see it, you can still use the app in the browser.
         </p>
         {isIos ? (
           <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Tap the Share button in Safari.</li>
-            <li>Tap "Add to Home Screen".</li>
-            <li>Tap "Add".</li>
+            <li>Open this app in Safari (iOS does not support install from Chrome or other browsers).</li>
+            <li>Tap the Share button.</li>
+            <li>Scroll and tap "Add to Home Screen".</li>
+            <li>Edit the name if you want, then tap "Add".</li>
           </ol>
         ) : isAndroid ? (
           <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open the browser menu.</li>
+            <li>Open this app in Chrome or Samsung Internet.</li>
+            <li>Open the browser menu (three dots).</li>
             <li>Tap "Install app" or "Add to Home screen".</li>
             <li>Confirm the install.</li>
           </ol>
         ) : (
           <ol className="list-decimal list-inside text-gray-700 dark:text-gray-200 space-y-1 mb-5">
-            <li>Open the browser menu.</li>
-            <li>Select "Install app" if available.</li>
+            <li>Open this app in Chrome or Edge on desktop.</li>
+            <li>Look for the install icon in the address bar, or open the browser menu.</li>
+            <li>Select "Install app" or "Install Scoreboard".</li>
             <li>Confirm the install.</li>
           </ol>
         )}
+        <div className="text-xs text-gray-500 dark:text-gray-400 mb-5">
+          If install is missing: refresh the page, leave private/incognito mode, or check that the site is served over HTTPS.
+        </div>
         <button
           onClick={onClose}
           className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-lg font-semibold transition-colors"
@@ -169,11 +219,10 @@ function App() {
   const [currentBoardId, setCurrentBoardId] = useState(null);
   const [name, setName] = useState("");
   const [points, setPoints] = useState("");
-  const [editIndex, setEditIndex] = useState(null);
+  const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [sortBy, setSortBy] = useState('points-desc');
   const [toast, setToast] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmDeleteBoardId, setConfirmDeleteBoardId] = useState(null);
@@ -185,7 +234,6 @@ function App() {
     historyReducer,
     initialHistoryState
   );
-  const [searchTerm, setSearchTerm] = useState("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [showAchievement, setShowAchievement] = useState(null);
   const [showBoardManager, setShowBoardManager] = useState(false);
@@ -196,24 +244,32 @@ function App() {
     const savedBoards = localStorage.getItem('scoreboard-boards');
     const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
     const savedPointLabel = localStorage.getItem('scoreboard-pointlabel');
-    if (savedDarkMode) setDarkMode(JSON.parse(savedDarkMode));
-    if (savedPointLabel) setPointLabel(savedPointLabel);
-    if (savedBoards) {
-      const parsed = JSON.parse(savedBoards);
-      setBoards(parsed);
-      if (parsed.length > 0) {
-        setCurrentBoardId(parsed[0].id);
+    if (savedDarkMode) {
+      try {
+        setDarkMode(JSON.parse(savedDarkMode));
+      } catch (error) {
+        setDarkMode(false);
       }
-    } else {
-      const defaultBoard = {
-        id: Date.now(),
-        name: 'Main Scoreboard',
-        people: [],
-        created: new Date().toISOString(),
-      };
-      setBoards([defaultBoard]);
-      setCurrentBoardId(defaultBoard.id);
     }
+    if (savedPointLabel) setPointLabel(savedPointLabel);
+    let nextBoards = [];
+    if (savedBoards) {
+      try {
+        const parsed = JSON.parse(savedBoards);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          nextBoards = parsed.map((board, index) =>
+            normalizeBoard(board, `Board ${index + 1}`)
+          );
+        }
+      } catch (error) {
+        nextBoards = [];
+      }
+    }
+    if (nextBoards.length === 0) {
+      nextBoards = [createDefaultBoard()];
+    }
+    setBoards(nextBoards);
+    setCurrentBoardId(nextBoards[0].id);
   }, []);
   useEffect(() => {
     if (boards.length > 0) {
@@ -255,6 +311,13 @@ function App() {
   }, [pointLabel]);
   const currentBoard = boards.find(b => b.id === currentBoardId);
   const people = currentBoard?.people || [];
+  useEffect(() => {
+    if (boards.length === 0) return;
+    const exists = boards.some((board) => board.id === currentBoardId);
+    if (!exists) {
+      setCurrentBoardId(boards[0].id);
+    }
+  }, [boards, currentBoardId]);
   const canInstall = installPrompt && !isInstalled;
   const platform = useMemo(() => {
     const ua = navigator.userAgent || '';
@@ -325,27 +388,30 @@ function App() {
       return;
     }
     const numPoints = Number(points);
-    const isDuplicate = people.some((p, i) => 
-      p.name.toLowerCase() === name.trim().toLowerCase() && i !== editIndex
+    const isDuplicate = people.some((p) =>
+      p.name.toLowerCase() === name.trim().toLowerCase() && p.id !== editId
     );
     if (isDuplicate) {
       showToast('A person with this name already exists', 'error');
       return;
     }
-    if (editIndex !== null) {
-      const updated = people.map((p, i) =>
-        i === editIndex ? { 
-          ...p, 
-          name: name.trim(), 
-          points: numPoints,
-        } : p
+    if (editId !== null) {
+      const updated = people.map((p) =>
+        p.id === editId
+          ? {
+              ...p,
+              name: name.trim(),
+              points: numPoints,
+            }
+          : p
       );
       setPeople(updated);
       saveToHistory(people, updated);
-      setEditIndex(null);
+      setEditId(null);
       showToast('Person updated successfully!');
     } else {
       const newPerson = { 
+        id: createId(),
         name: name.trim(), 
         points: numPoints,
         created: Date.now(),
@@ -359,40 +425,45 @@ function App() {
     setPoints("");
     setShowForm(false);
   };
-  const handleEdit = (idx) => {
-    setName(people[idx].name);
-    setPoints(people[idx].points);
-    setEditIndex(idx);
+  const handleEdit = (personId) => {
+    const person = people.find((p) => p.id === personId);
+    if (!person) return;
+    setName(person.name);
+    setPoints(person.points);
+    setEditId(personId);
     setShowForm(true);
   };
-  const handleDelete = (idx) => {
-    setConfirmDelete(idx);
+  const handleDelete = (personId) => {
+    setConfirmDeleteId(personId);
   };
   const confirmDeleteAction = () => {
-    const idx = confirmDelete;
-    const updated = people.filter((_, i) => i !== idx);
+    if (confirmDeleteId === null) return;
+    const updated = people.filter((person) => person.id !== confirmDeleteId);
     setPeople(updated);
     saveToHistory(people, updated);
-    if (editIndex === idx) {
-      setEditIndex(null);
+    if (editId === confirmDeleteId) {
+      setEditId(null);
       setName("");
       setPoints("");
       setShowForm(false);
     }
     showToast('Person deleted successfully!');
-    setConfirmDelete(null);
+    setConfirmDeleteId(null);
   };
-  const adjustPoints = (idx, delta) => {
-    const oldPoints = people[idx].points;
-    const updated = people.map((p, i) =>
-      i === idx ? { 
-        ...p, 
-        points: p.points + delta,
-      } : p
-    );
+  const adjustPoints = (personId, delta) => {
+    const target = people.find((person) => person.id === personId);
+    if (!target) return;
+    const oldPoints = target.points;
+    let updatedPerson = null;
+    const updated = people.map((person) => {
+      if (person.id !== personId) return person;
+      updatedPerson = { ...person, points: person.points + delta };
+      return updatedPerson;
+    });
+    if (!updatedPerson) return;
     setPeople(updated);
     saveToHistory(people, updated);
-    checkAchievements(updated[idx], oldPoints);
+    checkAchievements(updatedPerson, oldPoints);
     showToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
   };
   const resetAllPoints = () => {
@@ -416,7 +487,7 @@ function App() {
   const confirmClearAction = () => {
     setPeople([]);
     saveToHistory(people, []);
-    setEditIndex(null);
+    setEditId(null);
     setName("");
     setPoints("");
     setShowForm(false);
@@ -429,7 +500,7 @@ function App() {
       return;
     }
     const newBoard = {
-      id: Date.now(),
+      id: createId(),
       name: newBoardName.trim(),
       people: [],
       created: new Date().toISOString(),
@@ -467,18 +538,17 @@ function App() {
     setConfirmDeleteBoardId(null);
     showToast('Board deleted', 'info');
   };
-  const filteredPeople = people.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
   const sortedPeople = useMemo(() => {
-  return [...filteredPeople].sort((a, b) => {
-    switch (sortBy) {
-      case 'points-desc': return b.points - a.points;
-      case 'points-asc': return a.points - b.points;
-      case 'name-asc': return a.name.localeCompare(b.name);
-      case 'name-desc': return b.name.localeCompare(a.name);
-      default: return 0; } });
-}, [filteredPeople, sortBy]);
+    return [...people].sort((a, b) => b.points - a.points);
+  }, [people]);
+  const pointsRankById = useMemo(() => {
+    const ranked = [...people].sort((a, b) => b.points - a.points);
+    const rankMap = new Map();
+    ranked.forEach((person, index) => {
+      rankMap.set(person.id, index + 1);
+    });
+    return rankMap;
+  }, [people]);
   return (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-gray-900' : 'bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100'} p-4 md:p-8`}>
       <style>{`
@@ -511,14 +581,14 @@ function App() {
           <AchievementBadge {...showAchievement} />
         </div>
       )}
-      {confirmDelete !== null && (
+      {confirmDeleteId !== null && (
         <ConfirmDialog
           title="Delete person?"
-          message={`Delete ${people[confirmDelete]?.name}? This cannot be undone.`}
+          message={`Delete ${people.find((person) => person.id === confirmDeleteId)?.name || 'this person'}? This cannot be undone.`}
           confirmLabel="Delete"
           confirmTone="danger"
           onConfirm={confirmDeleteAction}
-          onCancel={() => setConfirmDelete(null)}
+          onCancel={() => setConfirmDeleteId(null)}
         />
       )}
       {confirmReset && (
@@ -680,7 +750,7 @@ function App() {
                   onChange={(e) => setNewBoardName(e.target.value)}
                   placeholder="New board name"
                   className="flex-1 px-3 py-2 bg-white dark:bg-gray-600 border-2 border-gray-200 dark:border-gray-500 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
-                  onKeyPress={(e) => e.key === 'Enter' && createBoard()}
+                  onKeyDown={(e) => e.key === 'Enter' && createBoard()}
                 />
                 <button
                   onClick={createBoard}
@@ -693,23 +763,6 @@ function App() {
           )}
           {people.length > 0 && (
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="🔍 Search people..."
-                className="w-full sm:flex-1 min-w-0 px-4 py-2 bg-gray-50 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
-              />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full sm:w-auto h-11 px-4 py-2 bg-gray-50 dark:bg-gray-700 rounded-lg font-semibold text-gray-700 dark:text-gray-200 border-2 border-gray-200 dark:border-gray-600 focus:border-purple-500 focus:outline-none transition-colors"
-              >
-                <option value="points-desc">🔽 Highest Points</option>
-                <option value="points-asc">🔼 Lowest Points</option>
-                <option value="name-asc">🔤 Name A-Z</option>
-                <option value="name-desc">🔤 Name Z-A</option>
-              </select>
               <button
                 onClick={resetAllPoints}
                 className="w-full sm:w-auto h-11 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-colors active:scale-95"
@@ -734,26 +787,25 @@ function App() {
               </p>
             </div>
           )}
-          {sortedPeople.length === 0 && people.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-12 text-center">
-              <div className="text-6xl mb-4">🔍</div>
-              <p className="text-gray-500 dark:text-gray-400 text-lg">
-                No results found for "{searchTerm}"
-              </p>
-            </div>
-          )}
           {sortedPeople.map((p) => {
-            const actualIndex = people.findIndex(person => person.name === p.name);
-            const position = [...people].sort((a, b) => b.points - a.points).findIndex(person => person.name === p.name) + 1;
+            const position = pointsRankById.get(p.id) || 0;
             return (
               <div
-                key={actualIndex}
+                key={p.id}
                 className="person-card bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 hover:shadow-xl transition-all"
               >
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center gap-4 flex-1 min-w-0 w-full">
                     <div className="text-2xl font-bold text-gray-400 dark:text-gray-500 w-8 flex-shrink-0">
-                      {position === 1 ? '🥇' : position === 2 ? '🥈' : position === 3 ? '🥉' : `#${position}`}
+                      {position === 1
+                        ? '🥇'
+                        : position === 2
+                        ? '🥈'
+                        : position === 3
+                        ? '🥉'
+                        : position > 0
+                        ? `#${position}`
+                        : '#-'}
                     </div>
                     <div className={`w-14 h-14 ${avatarColor(p.name)} rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md flex-shrink-0`}>
                       {p.name[0]?.toUpperCase()}
@@ -770,43 +822,43 @@ function App() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                     <button
-                      onClick={() => adjustPoints(actualIndex, -10)}
+                      onClick={() => adjustPoints(p.id, -5)}
                       className="h-11 min-w-[52px] px-2 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
                       title="Subtract 10"
                     >
-                      -10
+                      -5
                     </button>
                     <button
-                      onClick={() => adjustPoints(actualIndex, -1)}
+                      onClick={() => adjustPoints(p.id, -1)}
                       className="h-11 w-11 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-base active:scale-95"
                       title="Subtract 1"
                     >
                       −
                     </button>
                     <button
-                      onClick={() => adjustPoints(actualIndex, 1)}
+                      onClick={() => adjustPoints(p.id, 1)}
                       className="h-11 w-11 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-base active:scale-95"
                       title="Add 1"
                     >
                       +
                     </button>
                     <button
-                      onClick={() => adjustPoints(actualIndex, 10)}
+                      onClick={() => adjustPoints(p.id, 5)}
                       className="h-11 min-w-[52px] px-2 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
                       title="Add 10"
                     >
-                      +10
+                      +5
                     </button>
                     <div className="hidden sm:block w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
                     <button
-                      onClick={() => handleEdit(actualIndex)}
+                      onClick={() => handleEdit(p.id)}
                       className="h-11 w-11 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-lg shadow transition-all active:scale-95"
                       title="Edit"
                     >
                       ✏️
                     </button>
                     <button
-                      onClick={() => handleDelete(actualIndex)}
+                      onClick={() => handleDelete(p.id)}
                       className="h-11 w-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg shadow transition-all active:scale-95"
                       title="Delete"
                     >
@@ -824,7 +876,7 @@ function App() {
               <button
                 onClick={() => {
                   setShowForm(false);
-                  setEditIndex(null);
+                  setEditId(null);
                   setName("");
                   setPoints("");
                 }}
@@ -833,12 +885,15 @@ function App() {
                 ×
               </button>
               <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">
-                {editIndex !== null ? 'Edit Person' : 'Add Person'}
+                {editId !== null ? 'Edit Person' : 'Add Person'}
               </h2>
               <form onSubmit={handleAddOrUpdate} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Name</label>
+                  <label htmlFor="person-name" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Name
+                  </label>
                   <input
+                    id="person-name"
                     type="text"
                     className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:border-purple-500 focus:outline-none transition-colors"
                     placeholder="Enter name"
@@ -849,8 +904,11 @@ function App() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Points</label>
+                  <label htmlFor="person-points" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    Points
+                  </label>
                   <input
+                    id="person-points"
                     type="number"
                     className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:border-purple-500 focus:outline-none transition-colors"
                     placeholder="Enter points"
@@ -863,7 +921,7 @@ function App() {
                   type="submit"
                   className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all transform hover:scale-105"
                 >
-                  {editIndex !== null ? "Update" : "Add"}
+                  {editId !== null ? "Update" : "Add"}
                 </button>
               </form>
             </div>
@@ -872,7 +930,7 @@ function App() {
         <button
           onClick={() => {
             setShowForm(true);
-            setEditIndex(null);
+            setEditId(null);
             setName("");
             setPoints("");  
           }}
@@ -888,3 +946,5 @@ function App() {
   );
 }
 export default App;
+
+
