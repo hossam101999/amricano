@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useReducer } from 'react';
+import { useState, useEffect, useMemo, useReducer, useCallback } from 'react';
 import TargetScoreGame from './TargetScoreGame';
 import AchievementBadge from './components/AchievementBadge';
 import Confetti from './components/Confetti';
@@ -17,6 +17,7 @@ const normalizePerson = (person) => {
     name: typeof person?.name === 'string' ? person.name : '',
     points: Number.isFinite(parsedPoints) ? parsedPoints : 0,
     created: person?.created ?? Date.now(),
+    lastUpdated: person?.lastUpdated ?? Date.now(),
   };
 };
 
@@ -42,7 +43,6 @@ function App() {
   const [boards, setBoards] = useState([]);
   const [currentBoardId, setCurrentBoardId] = useState(null);
   const [name, setName] = useState("");
-  const [points, setPoints] = useState("");
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [toast, setToast] = useState(null);
@@ -63,16 +63,19 @@ function App() {
   const [showBoardManager, setShowBoardManager] = useState(false);
   const [newBoardName, setNewBoardName] = useState("");
   const [pointLabel, setPointLabel] = useState("points");
-  const [showSettings, setShowSettings] = useState(false);
-  const [targetScore, setTargetScore] = useState(100);
+  const [targetScore, setTargetScore] = useState("");
   const [winner, setWinner] = useState(null);
+  const [winningTimestamp, setWinningTimestamp] = useState(null);
 
+  // Load data from localStorage
   useEffect(() => {
     const savedBoards = localStorage.getItem('scoreboard-boards');
     const savedDarkMode = localStorage.getItem('scoreboard-darkmode');
     const savedPointLabel = localStorage.getItem('scoreboard-pointlabel');
     const savedTargetScore = localStorage.getItem('scoreboard-targetscore');
     const savedWinner = localStorage.getItem('scoreboard-winner');
+    const savedWinningTimestamp = localStorage.getItem('scoreboard-winning-timestamp');
+    
     if (savedDarkMode) {
       try {
         setDarkMode(JSON.parse(savedDarkMode));
@@ -89,6 +92,10 @@ function App() {
         setWinner(null);
       }
     }
+    if (savedWinningTimestamp) {
+      setWinningTimestamp(Number(savedWinningTimestamp));
+    }
+    
     let nextBoards = [];
     if (savedBoards) {
       try {
@@ -109,6 +116,7 @@ function App() {
     setCurrentBoardId(nextBoards[0].id);
   }, []);
 
+  // Save to localStorage
   useEffect(() => {
     if (boards.length > 0) {
       localStorage.setItem('scoreboard-boards', JSON.stringify(boards));
@@ -135,11 +143,14 @@ function App() {
   useEffect(() => {
     if (winner) {
       localStorage.setItem('scoreboard-winner', JSON.stringify(winner));
+      localStorage.setItem('scoreboard-winning-timestamp', winningTimestamp?.toString() || Date.now().toString());
     } else {
       localStorage.removeItem('scoreboard-winner');
+      localStorage.removeItem('scoreboard-winning-timestamp');
     }
-  }, [winner]);
+  }, [winner, winningTimestamp]);
 
+  // PWA install handlers
   useEffect(() => {
     const handleBeforeInstall = (event) => {
       event.preventDefault();
@@ -166,6 +177,7 @@ function App() {
   const currentBoard = boards.find(b => b.id === currentBoardId);
   const people = currentBoard?.people || [];
 
+  // Validate current board exists
   useEffect(() => {
     if (boards.length === 0) return;
     const exists = boards.some((board) => board.id === currentBoardId);
@@ -173,6 +185,14 @@ function App() {
       setCurrentBoardId(boards[0].id);
     }
   }, [boards, currentBoardId]);
+
+  // Reset history and winner when switching boards
+  useEffect(() => {
+    if (!currentBoard) return;
+    dispatchHistory({ type: 'reset', people: currentBoard.people || [] });
+    setWinner(null);
+    setWinningTimestamp(null);
+  }, [currentBoardId]);
 
   const canInstall = installPrompt && !isInstalled;
   const platform = useMemo(() => {
@@ -185,11 +205,6 @@ function App() {
     ? boards.find((board) => board.id === confirmDeleteBoardId)
     : null;
 
-  useEffect(() => {
-    if (!currentBoard) return;
-    dispatchHistory({ type: 'reset', people: currentBoard.people || [] });
-  }, [currentBoardId]);
-
   const setPeople = (newPeople) => {
     setBoards((prevBoards) =>
       prevBoards.map((b) => (b.id === currentBoardId ? { ...b, people: newPeople } : b))
@@ -200,23 +215,41 @@ function App() {
     dispatchHistory({ type: 'record', prev: prevPeople, next: newPeople });
   };
 
-  const undo = () => {
-    if (historyIndex > 0) {
-      const nextIndex = historyIndex - 1;
-      setPeople(history[nextIndex]);
-      dispatchHistory({ type: 'set-index', index: nextIndex });
-      showToast('Undone', 'info');
+  const checkForWinner = useCallback((updatedPeople) => {
+    // Find all people who have met or exceeded the target
+    const qualifiedPeople = updatedPeople.filter(p => p.points >= targetScore);
+    
+    if (qualifiedPeople.length > 0) {
+      // Find the person with the highest points among qualified people
+      const newWinner = qualifiedPeople.sort((a, b) => b.points - a.points)[0];
+      
+      // Check if winner changed
+      if (!winner || winner.id !== newWinner.id || winner.points !== newWinner.points) {
+        setWinner(newWinner);
+        setWinningTimestamp(Date.now());
+        
+        const message = newWinner.points === targetScore 
+          ? `${newWinner.name} hit exactly ${targetScore} ${pointLabel}!`
+          : `${newWinner.name} is winning with ${newWinner.points} ${pointLabel}!`;
+        
+        setShowAchievement({ 
+          icon: '🏆', 
+          title: newWinner.points >= targetScore ? '🏆 WINNER! 🏆' : '🏆 NEW LEADER! 🏆', 
+          description: message
+        });
+        triggerConfetti();
+        setTimeout(() => setShowAchievement(null), 5000);
+        return newWinner;
+      }
+    } else if (winner) {
+      // No one is qualified anymore, clear winner
+      setWinner(null);
+      setWinningTimestamp(null);
     }
-  };
+    
+    return null;
+  }, [targetScore, pointLabel, winner]);
 
-  const redo = () => {
-    if (historyIndex < history.length - 1) {
-      const nextIndex = historyIndex + 1;
-      setPeople(history[nextIndex]);
-      dispatchHistory({ type: 'set-index', index: nextIndex });
-      showToast('Redone', 'info');
-    }
-  };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -239,37 +272,34 @@ function App() {
     setTimeout(() => setShowConfetti(false), 5000);
   };
 
-  const checkForWinner = (updatedPeople) => {
-    const winnerPerson = updatedPeople.find(p => p.points === targetScore);
-    if (winnerPerson && (!winner || winner.id !== winnerPerson.id)) {
-      setWinner(winnerPerson);
-      setShowAchievement({ 
-        icon: '🏆', 
-        title: '🏆 WINNER! 🏆', 
-        description: `${winnerPerson.name} is the CHAMPION!` 
-      });
-      triggerConfetti();
-      setTimeout(() => {
-        setShowAchievement(null);
-      }, 5000);
-    }
-  };
-
   const checkAchievements = (person, oldPoints) => {
-    if (person.points >= 100 && oldPoints < 100) {
-      setShowAchievement({ icon: '🎯', title: 'Century Club', description: 'Reached 100 points!' });
+    // Check for milestone achievements (every 25 points)
+    const oldMilestone = Math.floor(oldPoints / 25);
+    const newMilestone = Math.floor(person.points / 25);
+    
+    if (newMilestone > oldMilestone && person.points > 0) {
+      const milestone = newMilestone * 25;
+      setShowAchievement({ 
+        icon: '🎯', 
+        title: `${milestone} ${pointLabel}!`, 
+        description: `${person.name} reached ${milestone} ${pointLabel}!` 
+      });
       setTimeout(() => setShowAchievement(null), 4000);
-      triggerConfetti();
+      
+      // Trigger mini confetti for milestones (not full screen)
+      if (milestone % 100 === 0) {
+        triggerConfetti();
+      }
     }
   };
 
   const handleAddOrUpdate = (e) => {
     e.preventDefault();
-    if (!name.trim() || isNaN(points) || points === "") {
-      showToast('Please fill in all fields correctly', 'error');
+    if (!name.trim()) {
+      showToast('Please enter a name', 'error');
       return;
     }
-    const numPoints = Number(points);
+    
     const isDuplicate = people.some((p) =>
       p.name.toLowerCase() === name.trim().toLowerCase() && p.id !== editId
     );
@@ -277,36 +307,43 @@ function App() {
       showToast('A person with this name already exists', 'error');
       return;
     }
+    
+    const timestamp = Date.now();
+    let updated;
+    
     if (editId !== null) {
-      const updated = people.map((p) =>
+      // Editing existing person - keep their current points
+      updated = people.map((p) =>
         p.id === editId
           ? {
               ...p,
               name: name.trim(),
-              points: numPoints,
+              lastUpdated: timestamp,
             }
           : p
       );
-      setPeople(updated);
-      saveToHistory(people, updated);
-      checkForWinner(updated);
-      setEditId(null);
-      showToast('Person updated successfully!');
     } else {
+      // Adding new person - start at 0 points
       const newPerson = { 
         id: createId(),
         name: name.trim(), 
-        points: numPoints,
-        created: Date.now(),
+        points: 0,
+        created: timestamp,
+        lastUpdated: timestamp,
       };
-      const updated = [...people, newPerson];
-      setPeople(updated);
-      saveToHistory(people, updated);
-      checkForWinner(updated);
-      showToast('Person added successfully!');
+      updated = [...people, newPerson];
     }
+    
+    setPeople(updated);
+    saveToHistory(people, updated);
+    
+    // Check if this affects the winner
+    checkForWinner(updated);
+    
+    showToast(editId !== null ? 'Person updated successfully!' : 'Person added successfully!');
+    
     setName("");
-    setPoints("");
+    setEditId(null);
     setShowForm(false);
   };
 
@@ -314,7 +351,6 @@ function App() {
     const person = people.find((p) => p.id === personId);
     if (!person) return;
     setName(person.name);
-    setPoints(person.points);
     setEditId(personId);
     setShowForm(true);
   };
@@ -328,15 +364,18 @@ function App() {
     const updated = people.filter((person) => person.id !== confirmDeleteId);
     setPeople(updated);
     saveToHistory(people, updated);
+    
     if (editId === confirmDeleteId) {
       setEditId(null);
       setName("");
-      setPoints("");
       setShowForm(false);
     }
-    if (winner && winner.id === confirmDeleteId) {
-      setWinner(null);
-    }
+    
+    // Check if this affects the winner
+    setTimeout(() => {
+      checkForWinner(updated);
+    }, 0);
+    
     showToast('Person deleted successfully!');
     setConfirmDeleteId(null);
   };
@@ -344,18 +383,30 @@ function App() {
   const adjustPoints = (personId, delta) => {
     const target = people.find((person) => person.id === personId);
     if (!target) return;
+    
     const oldPoints = target.points;
-    let updatedPerson = null;
+    const newPoints = target.points + delta;
+    const timestamp = Date.now();
+    
     const updated = people.map((person) => {
       if (person.id !== personId) return person;
-      updatedPerson = { ...person, points: person.points + delta };
-      return updatedPerson;
+      return { 
+        ...person, 
+        points: newPoints,
+        lastUpdated: timestamp,
+      };
     });
-    if (!updatedPerson) return;
+    
+    const updatedPerson = updated.find(p => p.id === personId);
+    
     setPeople(updated);
     saveToHistory(people, updated);
     checkAchievements(updatedPerson, oldPoints);
+    
+    // Check if this change affects the winner
     checkForWinner(updated);
+    
+    // Always show point adjustment toast
     showToast(`${delta > 0 ? '+' : ''}${delta} ${pointLabel}`, 'info');
   };
 
@@ -370,13 +421,16 @@ function App() {
   };
 
   const confirmResetAction = () => {
+    const timestamp = Date.now();
     const updated = people.map(p => ({ 
       ...p, 
       points: 0,
+      lastUpdated: timestamp,
     }));
     setPeople(updated);
     saveToHistory(people, updated);
     setWinner(null);
+    setWinningTimestamp(null);
     showToast('All points reset!', 'info');
     setConfirmReset(false);
   };
@@ -386,9 +440,9 @@ function App() {
     saveToHistory(people, []);
     setEditId(null);
     setName("");
-    setPoints("");
     setShowForm(false);
     setWinner(null);
+    setWinningTimestamp(null);
     showToast('All data cleared!', 'info');
     setConfirmClear(false);
   };
@@ -408,6 +462,8 @@ function App() {
     setCurrentBoardId(newBoard.id);
     setNewBoardName("");
     setShowBoardManager(false);
+    setWinner(null);
+    setWinningTimestamp(null);
     showToast('Board created!', 'success');
   };
 
@@ -435,6 +491,8 @@ function App() {
     setBoards(remaining);
     if (currentBoardId === confirmDeleteBoardId) {
       setCurrentBoardId(remaining[0].id);
+      setWinner(null);
+      setWinningTimestamp(null);
     }
     setConfirmDeleteBoardId(null);
     showToast('Board deleted', 'info');
@@ -454,11 +512,25 @@ function App() {
   }, [people]);
 
   const getBoardTitle = () => {
-    if (winner) {
-      return `🏆 ${winner.name} IS THE WINNER! 🏆`;
-    }
     return currentBoard?.name || 'Scoreboard';
   };
+
+  // Handle target score changes
+ const handleTargetScoreChange = (e) => {
+  let value = e.target.value;
+  
+  // لو الرقم فيه أصفار في الأول، شيلها
+  if (value.length > 1 && value[0] === '0') {
+    value = parseInt(value, 10).toString();
+  }
+  
+  setTargetScore(value);
+  
+  // Re-check winner with new target
+  setTimeout(() => {
+    checkForWinner(people);
+  }, 0);
+};
 
   return (
     <>
@@ -564,9 +636,19 @@ function App() {
                 <div className="flex items-center gap-3">
                   <div className="text-4xl">{winner ? '🏆' : '🏅'}</div>
                   <div>
-                    <h1 className={`text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent ${winner ? 'winner-title' : ''}`}>
+                    <h1 className={`text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent`}>
                       {getBoardTitle()}
                     </h1>
+                    {winner && (
+                      <div className="mt-2">
+                        <span className="winner-title text-2xl font-bold text-yellow-500">
+                          🏆 {winner.name} IS WINNING! 🏆
+                        </span>
+                        <p className="text-sm text-yellow-600 dark:text-yellow-400 font-bold mt-1">
+                          Target: {targetScore} {pointLabel} | Current: {winner.points} {pointLabel}
+                        </p>
+                      </div>
+                    )}
                     {!winner && boards.length > 1 && (
                       <button
                         onClick={() => setShowBoardManager(!showBoardManager)}
@@ -574,11 +656,6 @@ function App() {
                       >
                         Switch Board ({boards.length} total)
                       </button>
-                    )}
-                    {winner && (
-                      <p className="text-sm text-yellow-600 dark:text-yellow-400 font-bold">
-                        Target was {targetScore} {pointLabel}!
-                      </p>
                     )}
                   </div>
                 </div>
@@ -615,29 +692,8 @@ function App() {
                       <span className="hidden sm:inline">Install</span>
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
-                    title="Settings"
-                  >
-                    ⚙️
-                  </button>
-                  <button
-                    onClick={undo}
-                    disabled={historyIndex <= 0}
-                    className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Undo"
-                  >
-                    ↶
-                  </button>
-                  <button
-                    onClick={redo}
-                    disabled={historyIndex >= history.length - 1}
-                    className="h-11 w-11 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center text-lg active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Redo"
-                  >
-                    ↷
-                  </button>
+                 
+                 
                 </div>
               </div>
               <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg animate-fadeIn">
@@ -646,19 +702,14 @@ function App() {
                     <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                       🎯 TARGET SCORE (Set the winning number)
                     </label>
-                    <input
-                      type="number"
-                      value={targetScore}
-                      onChange={(e) => {
-                        setTargetScore(Number(e.target.value));
-                        setWinner(null);
-                      }}
-                      min="1"
-                      max="1000"
-                      className="w-full px-3 py-2 bg-white dark:bg-gray-600 border-2 border-gray-200 dark:border-gray-500 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
-                    />
+                   <input
+  type="number"
+  value={targetScore}
+  onChange={handleTargetScoreChange}
+  className="w-full px-3 py-2 bg-white dark:bg-gray-600 border-2 border-gray-200 dark:border-gray-500 rounded-lg focus:border-purple-500 focus:outline-none text-gray-800 dark:text-white"
+/>
                     <p className="text-sm text-purple-600 dark:text-purple-400 mt-2 font-semibold">
-                      First person to hit exactly {targetScore} {pointLabel} WINS! 🏆
+                      The person with the highest score above {targetScore} {pointLabel} WINS! 🏆
                     </p>
                   </div>
                 </div>
@@ -707,7 +758,9 @@ function App() {
                   </div>
                 </div>
               )}
-              {people.length > 0 && !winner && (
+              
+              {/* Reset buttons - Always visible when there are people */}
+              {people.length > 0 && (
                 <div className="mt-4 flex flex-col sm:flex-row gap-3">
                   <button
                     onClick={resetAllPoints}
@@ -724,6 +777,7 @@ function App() {
                 </div>
               )}
             </div>
+            
             <div className="space-y-3">
               {sortedPeople.length === 0 && people.length === 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-12 text-center">
@@ -754,11 +808,11 @@ function App() {
                             {p.name}
                             {isWinner && <span className="text-yellow-500 text-2xl">👑</span>}
                           </div>
-                          <div className={`text-2xl font-extrabold ${p.points < 0 ? 'text-red-500 dark:text-red-400' : p.points === targetScore ? 'text-yellow-500 dark:text-yellow-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                          <div className={`text-2xl font-extrabold ${p.points < 0 ? 'text-red-500 dark:text-red-400' : p.points >= targetScore ? 'text-yellow-500 dark:text-yellow-400' : 'text-purple-600 dark:text-purple-400'}`}>
                             {p.points} {pointLabel}
-                            {p.points === targetScore && (
+                            {p.points >= targetScore && (
                               <span className="ml-2 text-sm bg-yellow-500 text-white px-3 py-1 rounded-full font-bold">
-                                WINNER! 🏆
+                                {p.points === targetScore ? 'TARGET HIT!' : 'OVER THE TOP!'} 🏆
                               </span>
                             )}
                           </div>
@@ -769,58 +823,59 @@ function App() {
                           )}
                         </div>
                       </div>
-                      {!winner && (
-                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                          <button
-                            onClick={() => adjustPoints(p.id, -5)}
-                            className="h-11 min-w-[52px] px-2 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
-                            title="Subtract 5"
-                          >
-                            -5
-                          </button>
-                          <button
-                            onClick={() => adjustPoints(p.id, -1)}
-                            className="h-11 w-11 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-base active:scale-95"
-                            title="Subtract 1"
-                          >
-                            −
-                          </button>
-                          <button
-                            onClick={() => adjustPoints(p.id, 1)}
-                            className="h-11 w-11 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-base active:scale-95"
-                            title="Add 1"
-                          >
-                            +
-                          </button>
-                          <button
-                            onClick={() => adjustPoints(p.id, 5)}
-                            className="h-11 min-w-[52px] px-2 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
-                            title="Add 5"
-                          >
-                            +5
-                          </button>
-                          <div className="hidden sm:block w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
-                          <button
-                            onClick={() => handleEdit(p.id)}
-                            className="h-11 w-11 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-lg shadow transition-all active:scale-95"
-                            title="Edit"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={() => handleDelete(p.id)}
-                            className="h-11 w-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg shadow transition-all active:scale-95"
-                            title="Delete"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      )}
+                      
+                      {/* Always show point adjustment buttons */}
+                      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                        <button
+                          onClick={() => adjustPoints(p.id, -5)}
+                          className="h-11 min-w-[52px] px-2 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
+                          title="Subtract 5"
+                        >
+                          -5
+                        </button>
+                        <button
+                          onClick={() => adjustPoints(p.id, -1)}
+                          className="h-11 w-11 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 text-red-700 dark:text-red-300 font-bold rounded-lg transition-colors text-base active:scale-95"
+                          title="Subtract 1"
+                        >
+                          −
+                        </button>
+                        <button
+                          onClick={() => adjustPoints(p.id, 1)}
+                          className="h-11 w-11 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-base active:scale-95"
+                          title="Add 1"
+                        >
+                          +
+                        </button>
+                        <button
+                          onClick={() => adjustPoints(p.id, 5)}
+                          className="h-11 min-w-[52px] px-2 bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 text-green-700 dark:text-green-300 font-bold rounded-lg transition-colors text-sm sm:text-base active:scale-95"
+                          title="Add 5"
+                        >
+                          +5
+                        </button>
+                        <div className="hidden sm:block w-px h-8 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <button
+                          onClick={() => handleEdit(p.id)}
+                          className="h-11 w-11 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-bold rounded-lg shadow transition-all active:scale-95"
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id)}
+                          className="h-11 w-11 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg shadow transition-all active:scale-95"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+            
             {showForm && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 relative animate-scaleIn">
@@ -829,7 +884,6 @@ function App() {
                       setShowForm(false);
                       setEditId(null);
                       setName("");
-                      setPoints("");
                     }}
                     className="absolute top-3 right-3 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-2xl font-bold"
                   >
@@ -852,23 +906,10 @@ function App() {
                         onChange={(e) => setName(e.target.value)}
                         maxLength={20}
                         autoFocus
+                        required
                       />
                     </div>
-                    <div>
-                      <label htmlFor="person-points" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                        Points
-                      </label>
-                      <input
-                        id="person-points"
-                        type="number"
-                        className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg focus:border-purple-500 focus:outline-none transition-colors"
-                        placeholder="Enter points"
-                        value={points}
-                        onChange={(e) => setPoints(e.target.value)}
-                        max={9999}
-                      />
-                    </div>
-                    <button
+                    <button 
                       type="submit"
                       className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-3 rounded-lg shadow-lg transition-all transform hover:scale-105"
                     >
@@ -878,22 +919,21 @@ function App() {
                 </div>
               </div>
             )}
-            {!winner && (
-              <button
-                onClick={() => {
-                  setShowForm(true);
-                  setEditId(null);
-                  setName("");
-                  setPoints("");  
-                }}
-                className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-2xl flex items-center justify-center transition-all transform hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 z-30"
-                title="Add Person"
-              >
-                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            )}
+            
+            {/* Always show add button */}
+            <button
+              onClick={() => {
+                setShowForm(true);
+                setEditId(null);
+                setName("");
+              }}
+              className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold w-14 h-14 sm:w-16 sm:h-16 rounded-full shadow-2xl flex items-center justify-center transition-all transform hover:scale-110 active:scale-95 focus:outline-none focus:ring-4 focus:ring-purple-300 z-30"
+              title="Add Person"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
           </div>
         </div>
       ) : (
@@ -902,4 +942,5 @@ function App() {
     </>
   );
 }
+
 export default App;
