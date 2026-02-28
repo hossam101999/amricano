@@ -1,1 +1,12 @@
 ﻿@import "tailwindcss";
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-slideIn { animation: slideIn 0.3s ease-out; }
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.animate-scaleIn { animation: scaleIn 0.2s ease-out; }

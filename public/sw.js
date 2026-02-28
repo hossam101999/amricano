@@ -1,11 +1,13 @@
-﻿const CACHE_NAME = 'scoreboard-cache-v2'
+const CACHE_NAME = 'scoreboard-cache-v3'
+const FALLBACK_PAGE = '/offline.html'
 const CORE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
-  '/apple-touch-icon.png'
+  '/apple-touch-icon.png',
+  FALLBACK_PAGE,
 ]
 
 self.addEventListener('install', (event) => {
@@ -41,7 +43,9 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy))
           return response
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() =>
+          caches.match('/index.html').then((cached) => cached || caches.match(FALLBACK_PAGE))
+        )
     )
     return
   }
@@ -55,7 +59,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
           return response
         })
-        .catch(() => cached)
+        .catch(() => caches.match(FALLBACK_PAGE))
     })
   )
 })
